@@ -1,0 +1,1852 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>运维命令生成器</title>
+<style>
+:root {
+  --bg: #f4f6f9; --card: #ffffff; --border: #e3e8ef; --text: #1f2733; --muted: #7a8798;
+  --primary: #2563eb; --primary-d: #1d4ed8; --primary-soft: #e8f0fe;
+  --danger: #dc2626; --danger-bg: #fef2f2; --warn: #d97706; --warn-bg: #fffbeb;
+  --ok: #059669; --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 10px; --shadow: 0 1px 3px rgba(16,24,40,.06), 0 4px 12px rgba(16,24,40,.05);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+button { font-family: inherit; cursor: pointer; }
+
+/* ===== 顶栏 ===== */
+header { height: 54px; background: var(--card); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px; padding: 0 18px; flex-shrink: 0; }
+.logo { font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.logo .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.search-box { flex: 1; max-width: 380px; position: relative; }
+.search-box input { width: 100%; height: 34px; border: 1px solid var(--border); border-radius: 8px; padding: 0 12px 0 32px; font-size: 13px; outline: none; background: var(--bg); transition: .15s; }
+.search-box input:focus { border-color: var(--primary); background: #fff; box-shadow: 0 0 0 3px var(--primary-soft); }
+.search-box::before { content: "⌕"; position: absolute; left: 10px; top: 6px; color: var(--muted); font-size: 16px; }
+.sel-count { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.sel-count b { color: var(--primary); font-size: 15px; }
+.btn { height: 34px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); font-size: 13px; color: var(--text); transition: .15s; }
+.btn:hover { border-color: var(--primary); color: var(--primary); }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+.btn.primary:hover { background: var(--primary-d); }
+.btn.sm { height: 26px; padding: 0 9px; font-size: 12px; border-radius: 6px; }
+
+/* ===== 主布局 ===== */
+main { flex: 1; display: grid; grid-template-columns: 330px 1fr; gap: 12px; padding: 12px; min-height: 0; }
+.panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.panel-head { padding: 12px 14px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.step-badge { width: 20px; height: 20px; border-radius: 6px; background: var(--primary); color: #fff; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.panel-title { font-weight: 600; font-size: 14px; }
+.panel-head .spacer { flex: 1; }
+.panel-body { flex: 1; overflow-y: auto; padding: 10px 14px; min-height: 0; }
+
+/* ===== ① 服务器选择 ===== */
+.tag-group { margin-bottom: 10px; }
+.tag-group-name { font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+.tag-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip { font-size: 12px; padding: 3px 10px; border-radius: 20px; border: 1px solid color-mix(in srgb, var(--tc, #94a3b8) 40%, white); background: color-mix(in srgb, var(--tc, #64748b) 7%, white); color: var(--text); cursor: pointer; transition: .15s; user-select: none; font-weight: 500; }
+.chip:hover { border-color: var(--tc, var(--primary)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tc, var(--primary)) 45%, white); }
+.chip.on { background: var(--tc, var(--primary)); border-color: var(--tc, var(--primary)); color: #fff; font-weight: 700; }
+.srv-list { margin-top: 6px; border-top: 1px dashed var(--border); padding-top: 8px; position: relative; user-select: none; }
+/* 拖拽框选的蓝色选框 */
+.drag-band { position: fixed; background: color-mix(in srgb, var(--primary) 14%, transparent);
+  border: 1px solid var(--primary); border-radius: 5px; pointer-events: none; z-index: 999; }
+.srv-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 7px; cursor: pointer; transition: background .12s; }
+.srv-item:hover { background: var(--bg); }
+.srv-item.checked { background: var(--primary-soft); }
+.srv-item input { accent-color: var(--primary); width: 15px; height: 15px; flex-shrink: 0; }
+.srv-item .ip { font-family: var(--mono); font-size: 12.5px; }
+.srv-item .name { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.srv-item .mini-tags { margin-left: auto; display: flex; gap: 3px; flex-shrink: 0; }
+.mini-tag { font-size: 10px; background: var(--bg); border: 1px solid var(--border); color: var(--muted); border-radius: 4px; padding: 1px 5px; }
+.empty-tip { text-align: center; color: #3e6bcd; font-size: 24px; padding: 30px 10px; }
+
+/* ===== ② 命令编辑 ===== */
+.editor-toolbar { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; align-items: center; }
+.var-btn { font-size: 11.5px; height: 25px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: #475569; transition: .12s; }
+.var-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+.var-use { display: inline-block; margin-left: 5px; min-width: 14px; padding: 0 3px; border-radius: 8px; background: var(--primary); color: #fff; font-family: var(--mono); font-size: 9.5px; line-height: 13px; text-align: center; }
+select.tpl-select { height: 27px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; background: var(--bg); color: var(--text); padding: 0 6px; max-width: 190px; }
+.editor-wrap { position: relative; flex: 1; min-height: 140px; max-height: 34vh; flex-shrink: 0; border-bottom: 1px solid var(--border); }
+.editor-wrap textarea, .editor-wrap .backdrop { width: 100%; height: 100%; padding: 12px 14px; font-family: var(--mono); font-size: 13px; line-height: 1.65; border: none; outline: none; resize: none; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word; }
+.editor-wrap textarea { position: relative; z-index: 2; background: transparent; color: var(--text); }
+.editor-wrap .backdrop { position: absolute; inset: 0; z-index: 1; color: transparent; background: #fff; overflow: hidden; pointer-events: none; }
+.editor-wrap .backdrop mark { background: rgba(220,38,38,.18); color: transparent; border-radius: 3px; box-shadow: inset 0 -2px 0 rgba(220,38,38,.55); }
+.analysis { padding: 10px 14px; overflow-y: auto; flex: 1; min-height: 0; }
+.ana-block { border-radius: 8px; padding: 9px 12px; font-size: 12.5px; margin-bottom: 8px; }
+.ana-block.delay { background: var(--primary-soft); border: 1px solid #c7dbfc; }
+.ana-block.delay .total { font-weight: 700; color: var(--primary-d); }
+.ana-block .d-row { display: flex; gap: 8px; margin-top: 5px; font-family: var(--mono); font-size: 11.5px; color: #334155; }
+.ana-block .d-row .sec { margin-left: auto; color: var(--primary-d); font-weight: 700; flex-shrink: 0; }
+.ana-block.danger { background: var(--danger-bg); border: 1px solid #fecaca; }
+.ana-block.danger .d-title { color: var(--danger); font-weight: 700; }
+.ana-block .lv { font-size: 10.5px; font-weight: 700; border-radius: 4px; padding: 1px 6px; flex-shrink: 0; }
+.lv.high { background: var(--danger); color: #fff; }
+.lv.medium { background: var(--warn); color: #fff; }
+.ana-block.ok { background: #ecfdf5; border: 1px solid #bbf7d0; color: var(--ok); }
+
+/* ===== ③ 生成区 ===== */
+.gen-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--border); flex-shrink: 0; background: #fbfcfe; }
+.gen-bar label { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.gen-bar input[type=number] { width: 70px; height: 30px; border: 1px solid var(--border); border-radius: 7px; padding: 0 8px; font-size: 13px; font-family: var(--mono); outline: none; }
+.gen-bar input[type=number]:focus { border-color: var(--primary); }
+.results { display: none; border-top: 1px solid var(--border); flex: 1; min-height: 0; overflow-y: auto; padding: 0 14px 12px; background: var(--bg); }
+.results.show { display: block; }
+/* 结果区 sticky 工具条：滚动到任何位置都能整体复制 */
+.res-toolbar { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; align-items: center;
+  padding: 9px 2px; margin: 0 -2px 10px; background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(6px); border-bottom: 1px solid var(--border); }
+.res-toolbar .note { font-size: 12.5px; color: var(--muted); margin-right: auto; white-space: nowrap; }
+.res-toolbar .note b { color: var(--primary-d); }
+.btn.copy-main { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 600; }
+.btn.copy-main:hover { background: #047857; border-color: #047857; color: #fff; }
+.res-empty { text-align: center; padding: 46px 20px; color: var(--muted); font-size: 13px; line-height: 2; }
+.res-empty .big { font-size: 34px; opacity: .45; }
+.blk { background: var(--card); border: 1px solid var(--border); border-radius: 9px; margin-bottom: 10px; overflow: hidden; }
+.blk-head { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: #fbfcfe; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+.blk-head .seq { color: var(--muted); font-family: var(--mono); font-size: 11.5px; }
+.blk-head .ip { font-family: var(--mono); font-weight: 700; }
+.blk-head .nm { color: var(--muted); }
+.blk-head .wait { margin-left: auto; font-size: 11.5px; color: var(--warn); font-weight: 600; }
+.blk-cmd { padding: 9px 12px; font-family: var(--mono); font-size: 12.5px; line-height: 1.7; white-space: pre-wrap; word-break: break-all; }
+.blk-cmd .dg { background: rgba(220,38,38,.13); box-shadow: inset 0 -2px 0 rgba(220,38,38,.5); border-radius: 3px; }
+.blk-cmd .dg::after { content: " ⚠"; color: var(--danger); font-size: 11px; }
+
+/* ===== Modal ===== */
+.modal-mask { position: fixed; inset: 0; background: rgba(15,23,42,.4); display: none; align-items: center; justify-content: center; z-index: 50; backdrop-filter: blur(2px); }
+.modal-mask.show { display: flex; }
+.modal { background: var(--card); border-radius: 12px; width: min(900px, 92vw); max-height: 84vh; display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,.2); }
+.modal-head { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; }
+.modal-head b { font-size: 15px; }
+.modal-head .x { margin-left: auto; border: none; background: none; font-size: 19px; color: var(--muted); }
+.modal-body { padding: 14px 18px; overflow-y: auto; }
+.mgr-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-bottom: 1px solid var(--border); background: var(--card); }
+.mgr-search { position: relative; flex: 1; max-width: 440px; }
+.mgr-search .ic { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 15px; pointer-events: none; }
+.mgr-search input { width: 100%; height: 32px; border: 1px solid var(--border); border-radius: 8px; padding: 0 10px 0 30px; font-size: 13px; outline: none; background: var(--bg); transition: .15s; }
+.mgr-search input:focus { border-color: var(--primary); background: #fff; box-shadow: 0 0 0 3px var(--primary-soft); }
+.mgr-count { font-size: 12px; color: var(--muted); white-space: nowrap; }
+table.mgr { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.mgr th { text-align: left; color: var(--muted); font-weight: 600; padding: 7px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+table.mgr td { padding: 6px 8px; border-bottom: 1px solid #f1f5f9; }
+table.mgr input[type=text] { width: 100%; border: 1px solid transparent; border-radius: 6px; padding: 4px 7px; font-size: 12.5px; background: transparent; outline: none; }
+table.mgr input[type=text]:focus { border-color: var(--primary); background: #fff; }
+table.mgr .ip-cell { font-family: var(--mono); }
+table.mgr tbody tr { cursor: pointer; transition: background .12s; }
+table.mgr tbody tr:hover { background: var(--bg); }
+table.mgr tbody tr.sel { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+table.mgr tbody tr.sel:hover { background: color-mix(in srgb, var(--primary) 14%, transparent); }
+table.mgr tbody tr input, table.mgr tbody tr button { cursor: default; }
+table.mgr td.rownum { color: var(--muted); font-size: 11px; text-align: center; font-family: var(--mono); }
+table.mgr tbody tr.ghost-row { cursor: default; }
+table.mgr tbody tr.ghost-row:hover { background: transparent; }
+table.mgr tbody tr.ghost-row td { border-bottom: 1px dashed #e2e8f0; }
+table.mgr tbody tr.ghost-row input[type=text] { border: 1px dashed var(--border); color: var(--muted); background: #fcfdff; }
+table.mgr tbody tr.ghost-row input[type=text]:focus { color: var(--text); border-color: var(--primary); }
+table.mgr input.bad-ip { border-color: var(--danger) !important; background: var(--danger-bg); }
+table.mgr td.cell { cursor: cell; min-width: 40px; height: 30px; user-select: none; -webkit-user-select: none; }
+table.mgr td.cell:hover { box-shadow: inset 0 0 0 1px #c7d2fe; }
+table.mgr td.cell.csel { background: color-mix(in srgb, var(--primary) 12%, transparent); box-shadow: inset 0 0 0 1px var(--primary); }
+table.mgr td.cell.editing { padding: 0; }
+table.mgr td.pick { cursor: pointer; }
+table.mgr td.pick:hover { background: var(--bg); }
+table.mgr td.cell-ip, table.mgr td.cell[data-f="ip"] { font-family: var(--mono); }
+
+/* ---------- 风格统一的确认框（替代原生 confirm） ---------- */
+.confirm-mask { z-index: 200; }
+.confirm-modal { width: 360px; max-width: calc(100vw - 48px); padding: 18px 20px; border-radius: 14px; }
+.confirm-modal .cf-title { font-weight: 700; font-size: 14.5px; margin-bottom: 8px; }
+.confirm-modal .cf-msg { font-size: 12.5px; color: var(--muted); white-space: pre-line; line-height: 1.6; margin-bottom: 16px; }
+.confirm-modal .cf-actions { display: flex; justify-content: flex-end; gap: 8px; }
+textarea.import-area { width: 100%; height: 130px; border: 1px solid var(--border); border-radius: 8px; padding: 10px; font-family: var(--mono); font-size: 12px; resize: vertical; outline: none; margin-top: 8px; }
+.hist-item { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; font-size: 12.5px; }
+.hist-item .t { color: var(--muted); font-size: 11.5px; }
+.hist-item .cmd { font-family: var(--mono); margin-top: 3px; color: #334155; word-break: break-all; }
+
+/* ===== 批量打标签 面板 ===== */
+.btn.danger { color: var(--danger); border-color: #fecaca; }
+.btn.danger:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+.side-panel { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px; margin-bottom: 14px; }
+.sp-title { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
+.sp-title b { color: var(--primary); }
+/* 分段切换 追加/移除 */
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 10px; }
+.seg-btn { border: none; background: var(--bg); color: var(--muted); font-size: 12.5px; padding: 5px 14px; cursor: pointer; transition: .15s; }
+.seg-btn.on { background: var(--primary); color: #fff; }
+.seg-btn[data-mode="remove"].on { background: var(--danger); }
+/* 已含标签提示态 */
+.chip.has { border-style: dashed; }
+.chip.has::after { content: " 已含"; font-size: 10px; opacity: .7; }
+.chip.on.remove-mode, .remove-mode .chip.on { background: var(--danger); border-color: var(--danger); }
+.bp-group { margin-bottom: 8px; }
+.bp-gname { font-size: 11.5px; color: var(--muted); margin-bottom: 4px; }
+.tag-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 7px; margin-bottom: 6px; background: var(--card); }
+.tag-row .tg-name { flex: 1; font-size: 12.5px; font-weight: 600; }
+.tag-row .tg-cnt { font-size: 11px; color: var(--muted); }
+.tag-row input[type=text] { flex: 1; border: 1px solid var(--border); border-radius: 6px; padding: 3px 7px; font-size: 12.5px; outline: none; }
+.tag-row input[type=text]:focus { border-color: var(--primary); }
+/* 标签长按编辑态（批量打标签页内联重命名/删除） */
+.chip { position: relative; }
+.chip.editing { padding-right: 16px; background: #fff; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.chip-edit-input { width: 74px; min-width: 40px; border: none; outline: none; background: transparent; font: inherit; font-size: 12px; color: var(--text); padding: 0; }
+.chip-del { position: absolute; top: -7px; right: -7px; width: 16px; height: 16px; border-radius: 50%; border: none; background: var(--danger); color: #fff; font-size: 13px; line-height: 14px; padding: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(220,38,38,.5); z-index: 3; }
+.chip-del:hover { background: #b91c1c; }
+
+/* ---------- 标签分组体系 ---------- */
+.gtype { display: inline-block; font-size: 10px; font-weight: 700; border-radius: 4px; padding: 0 5px; margin-left: 6px; vertical-align: 1px; }
+.gtype.attr { background: #fef3c7; color: #b45309; }
+.gtype.tagc { background: var(--primary-soft); color: var(--primary-d); }
+.tag-group-name { display: flex; align-items: center; gap: 6px; }
+.tag-group-name .g-ops { display: none; gap: 4px; margin-left: auto; }
+.tag-group:hover .g-ops { display: inline-flex; }
+.g-ops button { border: none; background: transparent; cursor: pointer; font-size: 11px; color: var(--muted); padding: 1px 4px; border-radius: 4px; }
+.g-ops button:hover { background: var(--bg); color: var(--text); }
+#btnGroupMgr { width: 100%; margin-top: 2px; border-style: dashed; }
+/* 分组管理弹窗 */
+.grp-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.grp-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.grp-head input[type=text] { flex: 1; height: 28px; border: 1px solid var(--border); border-radius: 6px; padding: 0 8px; font-size: 12.5px; outline: none; }
+.grp-head select { height: 28px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+.grp-members { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-height: 26px; }
+.grp-add { display: flex; gap: 6px; margin-top: 7px; }
+.grp-add select, .grp-add input { height: 26px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; padding: 0 6px; outline: none; }
+.grp-add select { max-width: 200px; }
+.chip .x-out { margin-left: 5px; opacity: .55; font-weight: 400; }
+.chip .x-out:hover { opacity: 1; color: var(--danger); }
+/* 行内标签选择浮层 */
+.tag-picker { position: fixed; z-index: 300; width: 280px; max-height: 320px; overflow-y: auto;
+  background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+  box-shadow: 0 10px 34px rgba(15,23,42,.18); }
+.tag-picker .tp-search { width: 100%; height: 30px; border: 1px solid var(--border); border-radius: 8px; padding: 0 9px; font-size: 12.5px; outline: none; margin-bottom: 8px; }
+.tag-picker .bp-group { margin-bottom: 8px; }
+.tp-new { margin-top: 6px; }
+
+/* ===== Toast ===== */
+#toasts { position: fixed; top: 66px; right: 16px; z-index: 99; display: flex; flex-direction: column; gap: 8px; }
+.toast { min-width: 240px; max-width: 380px; padding: 11px 15px; border-radius: 9px; font-size: 13px; background: var(--card); border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(16,24,40,.14); animation: slideIn .25s cubic-bezier(.2,.9,.3,1.2); display: flex; gap: 9px; align-items: flex-start; }
+.toast.ok { border-left: 4px solid var(--ok); }
+.toast.warn { border-left: 4px solid var(--warn); }
+.toast.danger { border-left: 4px solid var(--danger); }
+.toast .tt { font-weight: 700; margin-bottom: 2px; }
+.toast .tm { color: var(--muted); font-size: 12px; line-height: 1.5; }
+@keyframes slideIn { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+.toast.bye { animation: fadeOut .3s forwards; }
+@keyframes fadeOut { to { opacity: 0; transform: translateX(20px); } }
+
+/* ===== 变量按钮即时 Tooltip ===== */
+#varTip { position: fixed; z-index: 200; max-width: 300px; background: #1f2733; color: #fff; font-size: 12px; line-height: 1.55; padding: 7px 10px; border-radius: 8px; box-shadow: 0 8px 24px rgba(16,24,40,.22); pointer-events: none; opacity: 0; transform: translateY(4px); transition: opacity .12s, transform .12s; }
+#varTip.show { opacity: 1; transform: none; }
+#varTip b { color: #93c5fd; font-family: var(--mono); }
+#varTip::after { content: ""; position: absolute; top: -5px; left: 12px; border: 5px solid transparent; border-bottom-color: #1f2733; border-top: 0; }
+
+/* ===== 模板库 ===== */
+.tpl-item { border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; margin-bottom: 9px; background: var(--card); }
+.tpl-item .t-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.tpl-item .t-name { font-weight: 600; font-size: 13px; }
+.tpl-item .t-cat { font-size: 11px; background: var(--primary-soft); color: var(--primary-d); border-radius: 10px; padding: 1px 8px; flex-shrink: 0; }
+.tpl-item .t-acts { margin-left: auto; display: flex; gap: 6px; }
+.tpl-item .t-prev { font-family: var(--mono); font-size: 11.5px; line-height: 1.55; color: #334155; background: var(--bg); border-radius: 6px; padding: 7px 9px; max-height: 120px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+.tpl-empty { text-align: center; color: var(--muted); padding: 24px; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span class="dot"></span>OpsForge <span style="font-weight:400;font-size:12px;color:var(--muted)">运维命令生成器</span></div>
+  <div class="search-box"><input id="searchInput" placeholder="搜索 IP / 命名 / 标签…"></div>
+  <span class="sel-count">已选 <b id="selCount">0</b> 台</span>
+  <button class="btn" id="btnTplLib">模板库</button>
+  <button class="btn" id="btnMgr">服务器管理</button>
+</header>
+
+<main>
+  <!-- ① 选服务器 -->
+  <section class="panel">
+    <div class="panel-head">
+      <span class="step-badge">1</span><span class="panel-title">选服务器</span>
+      <span class="spacer"></span>
+      <button class="btn sm" id="btnSelAll">全选</button>
+      <button class="btn sm" id="btnSelClear">清空</button>
+    </div>
+    <div class="panel-body" id="srvPanel">
+      <div id="tagGroups"></div>
+      <div class="srv-list" id="srvList"></div>
+    </div>
+  </section>
+
+  <!-- ②③ 写命令 + 生成 -->
+  <section class="panel">
+    <div class="panel-head">
+      <span class="step-badge">2</span><span class="panel-title">写命令</span>
+      <span class="spacer"></span>
+      <select class="tpl-select" id="tplSelect"><option value="">从模板库载入…</option></select>
+      <button class="btn sm" id="btnSaveTpl">保存为模板</button>
+    </div>
+    <div class="editor-toolbar" id="varBar"></div>
+    <div class="editor-wrap">
+      <div class="backdrop" id="backdrop"></div>
+      <textarea id="cmdInput" placeholder="输入 Linux 运维命令，支持变量插值，如：systemctl restart nginx&#10;多行或用 && 拼接均可，延时与危险命令实时分析" spellcheck="false"></textarea>
+    </div>
+    <div class="analysis" id="analysis">
+      <div class="ana-block ok">输入命令后实时分析延时与危险命令</div>
+    </div>
+    <div class="gen-bar">
+      <span class="step-badge">3</span><span class="panel-title">生成</span>
+      <label>下发间隔(秒)</label>
+      <input type="number" id="delayInput" min="0" value="0">
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn copy-main sm" id="btnCopyCmdsBar" style="display:none">复制全部命令</button>
+      <button class="btn primary" id="btnGenerate">生成命令</button>
+    </div>
+    <div class="results" id="results">
+      <div class="res-empty" id="resEmpty"><div class="big">⚙</div>选好机器、写好命令后点【生成命令】<br>每台机器的命令会在这里逐台列出，可整批或逐台复制</div>
+    </div>
+  </section>
+</main>
+
+<!-- 服务器管理 Modal -->
+<div class="modal-mask" id="mgrModal">
+  <div class="modal">
+    <div class="modal-head"><b>服务器管理</b><span style="margin-left:12px;font-size:12px;color:var(--muted)">单击单元格编辑 · 拖拽框选后可 Ctrl+C/V 复制粘贴 · 点行号或IP选行</span>
+      <button class="btn sm" id="btnBatchTag" style="margin-left:14px">批量打标签</button>
+      <button class="btn sm danger" id="btnDelSelected" disabled>删除所选</button>
+      <button class="btn sm" id="btnImport">导入</button>
+      <button class="btn sm" id="btnExport">导出</button>
+      <button class="x" data-close="mgrModal">✕</button></div>
+    <div class="mgr-toolbar">
+      <div class="mgr-search"><span class="ic">⌕</span><input id="mgrSearch" placeholder="筛选：IP / 命名 / 账号 / 密码 / 标签 / 端口…" autocomplete="off"></div>
+      <span class="mgr-count" id="mgrCount"></span>
+      <button class="btn sm" id="mgrClearFilter" style="display:none">清除筛选</button>
+    </div>
+    <div class="modal-body">
+      <!-- 批量打标签面板 -->
+      <div id="batchPanel" class="side-panel" style="display:none">
+        <div class="sp-title">为已勾选 <b id="bpCount">0</b> 台服务器处理标签</div>
+        <div class="seg">
+          <button class="seg-btn on" id="bpModeAdd" data-mode="add">追加</button>
+          <button class="seg-btn" id="bpModeRemove" data-mode="remove">移除</button>
+        </div>
+        <div id="bpTags"></div>
+        <div style="margin-top:10px"><button class="btn primary sm" id="btnApplyBatch">应用选中标签</button></div>
+      </div>
+      <table class="mgr">
+        <thead><tr><th style="width:30px">#</th><th style="width:30px"><input type="checkbox" id="mgrSelAll"></th><th style="width:130px">IP</th><th style="width:100px">命名</th><th style="width:70px">账号</th><th style="width:180px">密码</th><th>标签</th><th style="width:50px">端口</th></tr></thead>
+        <tbody id="mgrBody"></tbody>
+      </table>
+      <button class="btn sm" id="btnAddRow" style="margin-top:10px">+ 添加服务器</button>
+      <div id="importBox" style="display:none">
+        <textarea class="import-area" id="importText" placeholder="支持三种格式（# 开头为注释）：&#10;1. CSV 带表头：命名,IP,账号,密码,标签,端口,备注（推荐，可含引号转义）&#10;2. 从 Excel 直接粘贴多行多列&#10;3. 旧格式：命名,IP,账号,密码,标签1,标签2,..."></textarea>
+        <div style="margin-top:8px;display:flex;gap:8px"><button class="btn primary sm" id="btnDoImport">执行导入</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 模板库 Modal -->
+<div class="modal-mask" id="tplModal">
+  <div class="modal">
+    <div class="modal-head"><b>命令模板库</b>
+      <button class="btn sm primary" id="btnNewTpl" style="margin-left:14px">+ 新建模板</button>
+      <button class="btn sm" id="btnTplFromScript" style="margin-left:8px">从脚本转换</button>
+      <button class="x" data-close="tplModal">✕</button></div>
+    <div class="modal-body">
+      <div id="tplList"></div>
+      <div id="tplEditor" style="display:none">
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <input id="tplName" placeholder="模板名称" style="flex:1;height:32px;border:1px solid var(--border);border-radius:8px;padding:0 10px;font-size:13px;outline:none">
+          <input id="tplCat" placeholder="分类" style="width:140px;height:32px;border:1px solid var(--border);border-radius:8px;padding:0 10px;font-size:13px;outline:none">
+        </div>
+        <textarea id="tplContent" placeholder="命令内容，支持 {ip} {password} {user} {port} {name} 等变量，多行即逐行下发" style="width:100%;height:190px;border:1px solid var(--border);border-radius:8px;padding:10px;font-family:var(--mono);font-size:12px;resize:vertical;outline:none"></textarea>
+        <div id="tplFromScriptBox" style="display:none;margin-top:10px;border-top:1px dashed var(--border);padding-top:10px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:4px">粘贴交互式脚本，自动把 IP / 密码 / 账号 / 端口转成变量，命令逻辑保持固定：</div>
+          <textarea id="tplScriptSrc" placeholder="粘贴多服务器脚本…" style="width:100%;height:120px;border:1px solid var(--border);border-radius:8px;padding:10px;font-family:var(--mono);font-size:12px;resize:vertical;outline:none"></textarea>
+          <button class="btn sm primary" id="btnDoConvert" style="margin-top:6px">转换为模板</button>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px">
+          <button class="btn primary sm" id="btnSaveTplOk">保存</button>
+          <button class="btn sm" id="btnCancelTpl">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 标签分组管理 Modal -->
+<div class="modal-mask" id="groupModal">
+  <div class="modal" style="width:600px">
+    <div class="modal-head"><b>标签分组管理</b>
+      <button class="btn sm primary" id="btnNewGroup" style="margin-left:14px">+ 新分组</button>
+      <span style="margin-left:10px;font-size:12px;color:var(--muted)">属性 = 每台只能选一个 · 标签 = 可多选</span>
+      <button class="x" data-close="groupModal">✕</button></div>
+    <div class="modal-body">
+      <div id="groupList"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn sm" id="btnGroupCancel">取消</button>
+        <button class="btn sm primary" id="btnGroupSave">保存全部分组</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+const $ = id => {
+  if (typeof id === "string" && /[\s\[\].,>~+#]/.test(id))
+    console.error("⚠ $() 仅接受纯元素 ID，疑似误传 CSS 选择器:", JSON.stringify(id),
+      "—— 含空格/[/./>/~ 等请改用 document.querySelector(...)");
+  const el = document.getElementById(id);
+  if (!el) { console.error(`⚠ $() 未找到元素 #${id}，调用堆栈：`); console.trace(); }
+  return el;
+};
+const state = { servers: [], allTags: [], groups: {}, selected: new Set(), tpls: [], vars: {}, result: null, mgrSelected: new Set(), mgrFilter: "", mgrFiltered: [], pendingSaves: [] };
+let suppressClick = false;
+
+/* ---------- 基础 ---------- */
+async function api(path, method = "GET", body) {
+  const opt = { method, headers: { "Content-Type": "application/json" } };
+  if (body !== undefined) opt.body = JSON.stringify(body);
+  const r = await fetch(path, opt);
+  if (!r.ok) { let e; try { e = (await r.json()).error; } catch { e = r.statusText; } throw new Error(e || "请求失败"); }
+  return r.json();
+}
+function toast(title, msg = "", type = "ok", ms = 3600) {
+  const el = document.createElement("div");
+  el.className = "toast " + type;
+  el.innerHTML = `<div><div class="tt">${title}</div>${msg ? `<div class="tm">${msg}</div>` : ""}</div>`;
+  $("toasts").appendChild(el);
+  setTimeout(() => { el.classList.add("bye"); setTimeout(() => el.remove(), 300); }, ms);
+}
+function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+/* 风格统一的确认框（替代原生 confirm）：返回 Promise<boolean>，Enter 确认 / Esc 取消 */
+function confirmDialog({ title = "确认操作", message = "", okText = "确认", danger = false } = {}) {
+  return new Promise(resolve => {
+    const mask = document.createElement("div");
+    mask.className = "modal-mask show confirm-mask";
+    mask.innerHTML = `
+      <div class="modal confirm-modal">
+        <div class="cf-title">${esc(title)}</div>
+        <div class="cf-msg">${esc(message)}</div>
+        <div class="cf-actions">
+          <button class="btn sm" data-act="cancel">取消</button>
+          <button class="btn sm ${danger ? "danger" : "primary"}" data-act="ok">${esc(okText)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(mask);
+    const btnOk = mask.querySelector('[data-act="ok"]');
+    const btnCancel = mask.querySelector('[data-act="cancel"]');
+    let done = false;
+    const finish = val => {
+      if (done) return; done = true;
+      document.removeEventListener("keydown", onKey, true);
+      mask.remove();
+      resolve(val);
+    };
+    const onKey = e => {
+      if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); finish(true); }
+      else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); }
+    };
+    btnOk.onclick = () => finish(true);
+    btnCancel.onclick = () => finish(false);
+    mask.onclick = e => { if (e.target === mask) finish(false); };
+    document.addEventListener("keydown", onKey, true);
+    requestAnimationFrame(() => btnOk.focus());
+  });
+}
+function copyText(t, tip = "已复制") {
+  navigator.clipboard.writeText(t).then(() => toast(tip, "", "ok", 1800), () => toast("复制失败", "浏览器拒绝了剪贴板访问", "danger"));
+}
+
+/* ---------- 服务器列表 & 标签 ---------- */
+const TAG_PALETTE = ["#2563eb", "#059669", "#d97706", "#dc2626", "#7c3aed",
+  "#0891b2", "#db2777", "#65a30d", "#ea580c", "#4f46e5"];
+function tagColor(tag) {
+  let h = 0;
+  for (const ch of tag) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  return TAG_PALETTE[h % TAG_PALETTE.length];
+}
+function paintChip(el, tag) { el.style.setProperty("--tc", tagColor(tag)); return el; }
+/* 分组统一视图：[{name,type,items}]，末尾追加"其他"兜底组（未被任何组收录的已用标签） */
+function groupView() {
+  const groups = (state.groups || []).map(g => ({ ...g }));
+  const grouped = new Set(groups.flatMap(g => g.items));
+  const others = state.allTags.filter(t => !grouped.has(t));
+  if (others.length) groups.push({ name: "其他", type: "tag", items: others, builtin: true });
+  return groups;
+}
+async function loadServers() {
+  const d = await api("/api/servers");
+  const wasEmpty = !state.servers.length;
+  state.servers = d.servers; state.allTags = d.all_tags; state.groups = d.groups || [];
+  renderTags(); renderSrvList(); updateSelCount(); syncTagChips();
+  if (wasEmpty && !d.servers.length && !state._emptyPrompted) {
+    state._emptyPrompted = true; openMgr();
+    toast("服务器列表为空", "请先导入或添加服务器", "warn", 4000);
+  }
+}
+function renderTags() {
+  const box = $("tagGroups"); box.innerHTML = "";
+  groupView().forEach(g => box.appendChild(tagGroupEl(g)));
+  const btn = document.createElement("button");
+  btn.className = "btn sm"; btn.id = "btnGroupMgr"; btn.textContent = "⚙ 分组管理 / 新建分组";
+  btn.onclick = openGroupMgr;
+  box.appendChild(btn);
+}
+function tagGroupEl(group) {
+  const div = document.createElement("div");
+  div.className = "tag-group";
+  const nameRow = document.createElement("div");
+  nameRow.className = "tag-group-name";
+  nameRow.innerHTML = `<span>${esc(group.name)}</span>
+    <span class="gtype ${group.type === "attribute" ? "attr" : "tagc"}">${group.type === "attribute" ? "属性·单选" : "标签"}</span>`;
+  if (!group.builtin) {
+    const ops = document.createElement("span");
+    ops.className = "g-ops";
+    ops.innerHTML = `<button type="button" title="管理该分组">⚙</button><button type="button" title="删除分组（不影响服务器上的标签）">✕</button>`;
+    ops.children[0].onclick = () => openGroupMgr(group.name);
+    ops.children[1].onclick = async () => {
+      if (!(await confirmDialog({
+        title: "删除分组", message: `确认删除分组「${group.name}」？\n仅移除该分组定义，服务器上已打的标签不受影响。`,
+        okText: "删除分组", danger: true,
+      }))) return;
+      state.groups = state.groups.filter(g => g.name !== group.name);
+      await saveTagGroups();
+      renderTags();
+    };
+    nameRow.appendChild(ops);
+  }
+  div.appendChild(nameRow);
+  const chips = document.createElement("div");
+  chips.className = "tag-chips";
+  group.items.forEach(t => {
+    const c = document.createElement("span");
+    c.className = "chip"; c.textContent = t; c.dataset.tag = t;
+    paintChip(c, t);
+    c.onclick = () => toggleTag(t, c);
+    chips.appendChild(c);
+  });
+  div.appendChild(chips);
+  return div;
+}
+async function saveTagGroups() {
+  try { await api("/api/tag-groups", "PUT", { groups: state.groups }); }
+  catch (e) { toast("保存失败", e.message, "danger"); }
+}
+
+/* ---------- 标签分组管理 ---------- */
+let draftGroups = [];
+function openGroupMgr(focusName) {
+  draftGroups = (state.groups || []).map(g => ({ name: g.name, type: g.type, items: [...(g.items || [])] }));
+  renderGroupMgr(focusName);
+  $("groupModal").classList.add("show");
+}
+function renderGroupMgr(focusName) {
+  const box = $("groupList"); box.innerHTML = "";
+  draftGroups.forEach((g, gi) => {
+    const card = document.createElement("div"); card.className = "grp-card";
+    const head = document.createElement("div"); head.className = "grp-head";
+    const nameInp = document.createElement("input");
+    nameInp.type = "text"; nameInp.value = g.name; nameInp.maxLength = 12; nameInp.placeholder = "分组名称";
+    nameInp.oninput = () => { g.name = nameInp.value.trim(); };
+    const typeSel = document.createElement("select");
+    typeSel.innerHTML = `<option value="tag">标签 · 可多选</option><option value="attribute">属性 · 单选</option>`;
+    typeSel.value = g.type;
+    typeSel.onchange = () => { g.type = typeSel.value; };
+    const delBtn = document.createElement("button");
+    delBtn.className = "btn sm"; delBtn.style.color = "var(--danger)"; delBtn.textContent = "删组";
+    delBtn.onclick = async () => {
+      if (!(await confirmDialog({
+        title: "删除分组",
+        message: `确认删除分组「${g.name || "(未命名)"}」？\n仅移除该分组定义，服务器上已打的标签不受影响。`,
+        okText: "删除", danger: true,
+      }))) return;
+      draftGroups.splice(gi, 1); renderGroupMgr();
+    };
+    head.append(nameInp, typeSel, delBtn);
+    const members = document.createElement("div"); members.className = "grp-members";
+    g.items.forEach((t, ti) => {
+      const chip = document.createElement("span"); chip.className = "chip"; paintChip(chip, t);
+      chip.textContent = t;
+      const x = document.createElement("span"); x.className = "x-out"; x.textContent = "×"; x.title = "移出该组";
+      x.onclick = e => { e.stopPropagation(); g.items.splice(ti, 1); renderGroupMgr(); };
+      chip.appendChild(x);
+      members.appendChild(chip);
+    });
+    if (!g.items.length) members.innerHTML = `<span style="font-size:11.5px;color:var(--muted)">暂无成员</span>`;
+    const addRow = document.createElement("div"); addRow.className = "grp-add";
+    const usedAnywhere = new Set(draftGroups.flatMap(x => x.items));
+    const pool = state.allTags.filter(t => !usedAnywhere.has(t));
+    const sel = document.createElement("select");
+    sel.innerHTML = `<option value="">从已有标签选择…</option>` +
+      pool.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
+    const newInp = document.createElement("input");
+    newInp.type = "text"; newInp.placeholder = "或输入新成员";
+    const addBtn = document.createElement("button"); addBtn.className = "btn sm"; addBtn.textContent = "添加";
+    addBtn.onclick = () => {
+      const v = (sel.value || newInp.value.trim());
+      if (!v) return;
+      if (!g.items.includes(v)) g.items.push(v);
+      renderGroupMgr();
+    };
+    addRow.append(sel, newInp, addBtn);
+    card.append(head, members, addRow);
+    box.appendChild(card);
+    if (focusName && g.name === focusName) { nameInp.focus(); }
+  });
+}
+$("btnNewGroup").onclick = () => {
+  draftGroups.push({ name: `新分组`, type: "tag", items: [] });
+  renderGroupMgr();
+  const inputs = $("groupList").querySelectorAll(".grp-head input[type=text]");
+  const last = inputs[inputs.length - 1];
+  if (last) { last.focus(); last.select(); }
+};
+$("btnGroupCancel").onclick = () => $("groupModal").classList.remove("show");
+$("btnGroupSave").onclick = async () => {
+  const cleaned = draftGroups
+    .filter(g => g.name)
+    .map(g => ({ ...g, name: g.name.trim() }));
+  try { await api("/api/tag-groups", "PUT", { groups: cleaned }); }
+  catch (e) { return toast("保存失败", e.message, "danger"); }
+  state.groups = cleaned;
+  $("groupModal").classList.remove("show");
+  await loadServers();
+  renderTags(); renderBatchTagsIfOpen();
+  toast("已保存", `${cleaned.length} 个分组`, "ok");
+};
+function renderBatchTagsIfOpen() {
+  if ($("batchPanel").style.display !== "none") renderBatchTags();
+}
+function toggleTag(tag, el) {
+  const ips = state.servers.filter(s => (s.tags || []).includes(tag)).map(s => s.ip);
+  const allIn = ips.every(ip => state.selected.has(ip));
+  if (allIn) { ips.forEach(ip => state.selected.delete(ip)); el.classList.remove("on"); }
+  else { ips.forEach(ip => state.selected.add(ip)); el.classList.add("on"); }
+  renderSrvList(); updateSelCount();
+}
+function filteredServers() {
+  const kw = $("searchInput").value.trim().toLowerCase();
+  if (!kw) return state.servers;
+  return state.servers.filter(s =>
+    s.ip.includes(kw) || (s.name || "").toLowerCase().includes(kw) ||
+    (s.tags || []).some(t => t.toLowerCase().includes(kw)));
+}
+function renderSrvList() {
+  const box = $("srvList"); box.innerHTML = "";
+  const list = filteredServers();
+  if (!list.length) { box.innerHTML = `<div class="empty-tip">无匹配服务器<br><small>点右上角「服务器管理」添加</small></div>`; return; }
+  list.forEach(s => {
+    const checked = state.selected.has(s.ip);
+    const item = document.createElement("div");
+    item.className = "srv-item" + (checked ? " checked" : "");
+    item.dataset.ip = s.ip;
+    item.innerHTML = `<input type="checkbox" ${checked ? "checked" : ""}>
+      <span class="ip">${s.ip}</span>
+      <span class="name">${esc(s.name || "")}</span>
+      <span class="mini-tags">${(s.tags || []).slice(0, 3).map(t =>
+        `<span class="mini-tag" style="border-color:color-mix(in srgb, ${tagColor(t)} 40%, white);background:color-mix(in srgb, ${tagColor(t)} 8%, white);color:${tagColor(t)}">${esc(t)}</span>`).join("")}
+      ${(s.tags || []).length > 3 ? `<span class="mini-tag">+${s.tags.length - 3}</span>` : ""}</span>`;
+    item.onclick = e => {
+      if (suppressClick) return;
+      if (e.target.tagName !== "INPUT") item.querySelector("input").click();
+      else { state.selected.has(s.ip) ? state.selected.delete(s.ip) : state.selected.add(s.ip);
+        item.classList.toggle("checked"); updateSelCount(); syncTagChips(); }
+    };
+    box.appendChild(item);
+  });
+}
+function syncTagChips() {
+  // 仅管辖左侧树（基于主界面勾选集联动）；批量面板/分组管理的 chip 自有状态，用 data-batch 排除
+  document.querySelectorAll("#tagGroups .chip").forEach(c => {
+    const ips = state.servers.filter(s => (s.tags || []).includes(c.dataset.tag)).map(s => s.ip);
+    c.classList.toggle("on", ips.length > 0 && ips.every(ip => state.selected.has(ip)));
+  });
+}
+function updateSelCount() { $("selCount").textContent = state.selected.size; }
+$("btnSelAll").onclick = () => { filteredServers().forEach(s => state.selected.add(s.ip)); renderSrvList(); updateSelCount(); syncTagChips(); };
+$("btnSelClear").onclick = () => { state.selected.clear(); renderSrvList(); updateSelCount(); syncTagChips(); };
+$("searchInput").oninput = renderSrvList;
+
+/* ---------- 通用鼠标拖拽框选（长按拖动批量选择） ---------- */
+/* 关键：相交判定与选框绘制统一用「视口坐标」，选框用 position:fixed，
+   彻底规避 padding / 滚动 / 边框带来的坐标偏移，做到框到哪选到哪。 */
+function enableBoxSelect({ container, scrollEl, rowSel, getSet, onUpdate }) {
+  let maybe = false, dragging = false, mode = "add", scrollDir = 0, raf = null;
+  let sx = 0, sy = 0, lx = 0, ly = 0, band = null;
+  let snapshot = new Map();   // 拖拽开始时各行选中态快照：往回拉时框外行恢复原状
+  function vpBand() {
+    return { left: Math.min(sx, lx), top: Math.min(sy, ly),
+             right: Math.max(sx, lx), bottom: Math.max(sy, ly) };
+  }
+  function applyBand() {
+    const b = vpBand();
+    container.querySelectorAll(rowSel).forEach(it => {
+      const ip = it.dataset.ip; if (!ip) return;
+      const ir = it.getBoundingClientRect();
+      const inside = !(ir.right < b.left || ir.left > b.right || ir.bottom < b.top || ir.top > b.bottom);
+      // 框内 → 按 mode 设定；框外 → 恢复拖拽前快照（支持往回拉取消）
+      const target = inside ? (mode === "add") : (snapshot.get(ip) ?? false);
+      const set = getSet();
+      const on = target;
+      if (on) set.add(ip); else set.delete(ip);
+      it.classList.toggle("checked", on);   // 左侧列表高亮
+      it.classList.toggle("sel", on);        // 管理表格高亮
+      const cb = it.querySelector("input[type=checkbox]"); if (cb) cb.checked = on;
+    });
+    onUpdate();
+  }
+  function drawBand() {
+    const b = vpBand();
+    band.style.left = b.left + "px"; band.style.top = b.top + "px";
+    band.style.width = (b.right - b.left) + "px"; band.style.height = (b.bottom - b.top) + "px";
+  }
+  function tick() {
+    if (dragging && scrollDir !== 0) { scrollEl.scrollTop += scrollDir * 10; drawBand(); applyBand(); }
+    raf = dragging ? requestAnimationFrame(tick) : null;
+  }
+  container.addEventListener("pointerdown", e => {
+    if (e.target.closest("input,button,textarea,a")) return;   // 不抢占输入/按钮/链接
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const item = e.target.closest(rowSel);
+    maybe = true; dragging = false; scrollDir = 0;
+    sx = lx = e.clientX; sy = ly = e.clientY;
+    const set = getSet();
+    mode = (item && item.dataset.ip && set.has(item.dataset.ip)) ? "remove" : "add";  // 起点已选→拖拽变取消
+    // 记录拖拽前各行选中态快照：往回拉时框外行恢复原状
+    snapshot = new Map();
+    container.querySelectorAll(rowSel).forEach(it => {
+      if (it.dataset.ip) snapshot.set(it.dataset.ip, set.has(it.dataset.ip));
+    });
+  });
+  window.addEventListener("pointermove", e => {
+    if (!maybe) return;
+    lx = e.clientX; ly = e.clientY;
+    if (!dragging) {
+      if (Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) < 5) return;            // 阈值内算普通点击
+      dragging = true;
+      band = document.createElement("div"); band.className = "drag-band"; document.body.appendChild(band);
+      raf = requestAnimationFrame(tick);
+    }
+    const r = scrollEl.getBoundingClientRect();
+    scrollDir = e.clientY < r.top + 30 ? -1 : e.clientY > r.bottom - 30 ? 1 : 0;
+    drawBand(); applyBand();
+  });
+  window.addEventListener("pointerup", () => {
+    if (!maybe) return;
+    if (dragging) {
+      band && band.remove(); band = null; scrollDir = 0;
+      if (raf) cancelAnimationFrame(raf);
+      suppressClick = true; setTimeout(() => suppressClick = false, 0);  // 抑制随后的合成 click
+    }
+    maybe = false; dragging = false;
+  });
+}
+enableBoxSelect({
+  container: $("srvList"), scrollEl: $("srvList").closest(".panel-body"), rowSel: ".srv-item",
+  getSet: () => state.selected,
+  onUpdate: () => { updateSelCount(); syncTagChips(); }
+});
+/* 管理表格不再使用行级拖选：表格已改为 Excel 式单元格框选，
+   行勾选仅通过「点行号/IP 格、勾选框」完成，避免拖单元格时误勾选行 */
+
+/* ---------- 变量 & 模板 ---------- */
+const varTip = document.createElement("div"); varTip.id = "varTip"; document.body.appendChild(varTip);
+/* 变量按钮显示名（按钮上展示中文，插入的仍是原始变量语法） */
+const VAR_LABELS = {
+  "{ip}": "完整IP", "{ip_prefix}": "网段前缀", "{ip_last}": "IP末段",
+  "{name}": "命名", "{user}": "账号", "{password}": "密码",
+  "{port}": "端口", "{date}": "日期",
+};
+/* 使用频次持久化：点击次数越多排序越靠前 */
+function varUsage() {
+  try { return JSON.parse(localStorage.getItem("opsforge_var_usage") || "{}"); }
+  catch { return {}; }
+}
+function bumpVarUsage(v) {
+  const u = varUsage(); u[v] = (u[v] || 0) + 1;
+  try { localStorage.setItem("opsforge_var_usage", JSON.stringify(u)); } catch {}
+}
+function showVarTip(btn) {
+  varTip.innerHTML = `<b>${esc(btn.dataset.var)}</b> · ${esc(btn.dataset.desc || "")}`;
+  varTip.classList.add("show");
+  const r = btn.getBoundingClientRect(), tr = varTip.getBoundingClientRect();
+  let left = r.left, top = r.bottom + 8;
+  if (left + tr.width > window.innerWidth - 8) left = window.innerWidth - tr.width - 8;
+  if (top + tr.height > window.innerHeight - 8) top = r.top - tr.height - 8;
+  varTip.style.left = left + "px"; varTip.style.top = top + "px";
+}
+function hideVarTip() { varTip.classList.remove("show"); }
+async function loadMeta() {
+  const d = await api("/api/meta");
+  state.vars = d.template_vars;
+  state.editorVars = d.editor_vars;
+  renderVarBar();
+}
+function renderVarBar() {
+  const bar = $("varBar");
+  bar.innerHTML = "";
+  const usage = varUsage();
+  // 按使用次数降序；未用过的保持后端定义顺序
+  const vars = Object.keys(state.editorVars)
+    .map((v, i) => ({ v, i, n: usage[v] || 0 }))
+    .sort((a, b) => (b.n - a.n) || (a.i - b.i));
+  vars.forEach(({ v, n }) => {
+    const b = document.createElement("button");
+    b.className = "var-btn";
+    b.textContent = VAR_LABELS[v] || v;   // 按钮显示中文名
+    b.dataset.var = v;                    // 实际插入的变量
+    b.dataset.desc = state.editorVars[v];
+    b.title = `${v} · ${state.editorVars[v]}`;  // 兜底（无障碍）
+    if (n > 0) {
+      const badge = document.createElement("span");
+      badge.className = "var-use"; badge.textContent = n;
+      b.appendChild(badge);
+    }
+    b.onmouseenter = () => showVarTip(b);
+    b.onmouseleave = hideVarTip;
+    b.onclick = () => { insertAtCursor(v); bumpVarUsage(v); renderVarBar(); hideVarTip(); };
+    bar.appendChild(b);
+  });
+}
+function insertAtCursor(text) {
+  const ta = $("cmdInput");
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  setCmdValue(ta.value.slice(0, s) + text + ta.value.slice(e));
+  ta.focus(); ta.selectionStart = ta.selectionEnd = s + text.length;
+  onCmdInput();
+}
+/* ---------- 命令框自定义撤销栈 ----------
+   浏览器原生规则：JS 给 textarea.value 赋值会清空撤销历史，
+   导致「模板载入/变量插入」之后 Cmd+Z 失灵。此处接管撤销/重做。 */
+const cmdUndo = { stack: [""], idx: 0, max: 300, skip: false, lastPushAt: 0, lastTyped: false };
+function cmdPush(v, coalesce = false) {
+  const u = cmdUndo;
+  if (u.stack[u.idx] === v) return;
+  const now = Date.now();
+  // 仅「连续快速键入」合并为同一撤销单元；模板载入/粘贴等程序化赋值永远是独立单元
+  if (coalesce && u.lastTyped && now - u.lastPushAt < 900 && u.idx === u.stack.length - 1) {
+    u.stack[u.idx] = v;
+  } else {
+    u.stack = u.stack.slice(0, u.idx + 1);
+    u.stack.push(v);
+    if (u.stack.length > u.max) u.stack.shift();
+    u.idx = u.stack.length - 1;
+  }
+  u.lastPushAt = now;
+  u.lastTyped = coalesce;
+}
+function setCmdValue(v) {   // 所有程序化赋值必须走这里，保证可撤销
+  const ta = $("cmdInput");
+  ta.value = v;
+  cmdPush(v);
+  onCmdInput();
+}
+function cmdApply() {
+  const ta = $("cmdInput");
+  cmdUndo.skip = true;       // 本次程序化变更不再入栈
+  ta.value = cmdUndo.stack[cmdUndo.idx];
+  onCmdInput();
+}
+$("cmdInput").addEventListener("input", () => {
+  if (cmdUndo.skip) { cmdUndo.skip = false; return; }
+  cmdPush($("cmdInput").value, true);
+});
+$("cmdInput").addEventListener("keydown", e => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod || e.key.toLowerCase() !== "z") return;
+  e.preventDefault();        // 接管原生撤销
+  const u = cmdUndo;
+  if (e.shiftKey) {          // Cmd/Ctrl+Shift+Z = 重做
+    if (u.idx < u.stack.length - 1) { u.idx++; cmdApply(); }
+  } else {
+    let i = u.idx;
+    while (i > 0 && u.stack[i - 1] === $("cmdInput").value) i--;
+    if (i > 0) { u.idx = i - 1; cmdApply(); }
+  }
+});
+async function loadTemplates() {
+  const d = await api("/api/templates");
+  state.tpls = d.templates;
+  const sel = $("tplSelect");
+  sel.innerHTML = `<option value="">从模板库载入…</option>` +
+    d.templates.map((t, i) => `<option value="${i}">[${esc(t.category || "未分类")}] ${esc(t.name)}</option>`).join("");
+}
+$("tplSelect").onchange = e => {
+  const i = e.target.value;
+  if (i === "") return;
+  setCmdValue(state.tpls[+i].content);
+  e.target.value = "";
+  onCmdInput();
+  toast("模板已载入", state.tpls[+i].name, "ok", 2000);
+};
+
+/* ---------- 实时分析（延时 + 危险） ---------- */
+let analyzeTimer = null;
+function onCmdInput() {
+  syncBackdrop();
+  clearTimeout(analyzeTimer);
+  analyzeTimer = setTimeout(runAnalyze, 300);
+}
+function syncBackdrop() {
+  const ta = $("cmdInput"), bd = $("backdrop");
+  bd.innerHTML = highlightDanger(ta.value) + "\n";
+  bd.scrollTop = ta.scrollTop;
+}
+function dangerLineSet(cmd, hits) {
+  const set = new Set();
+  (hits || []).forEach(h => set.add(h.line.trim()));
+  return set;
+}
+let lastDangerHits = [];
+function highlightDanger(cmd) {
+  const dangerLines = dangerLineSet(cmd, lastDangerHits);
+  return esc(cmd).split("\n").map(line =>
+    dangerLines.has(line.trim()) && line.trim() ? `<mark>${line || " "}</mark>` : line
+  ).join("\n");
+}
+async function runAnalyze() {
+  const cmd = $("cmdInput").value;
+  if (!cmd.trim()) {
+    lastDangerHits = [];
+    $("analysis").innerHTML = `<div class="ana-block ok">输入命令后实时分析延时与危险命令</div>`;
+    syncBackdrop();
+    return;
+  }
+  try {
+    const d = await api("/api/analyze", "POST", { cmd });
+    lastDangerHits = d.danger;
+    renderAnalysis(d);
+    syncBackdrop();
+  } catch (e) { /* 忽略瞬时错误 */ }
+}
+function renderAnalysis(d) {
+  const box = $("analysis"); box.innerHTML = "";
+  if (d.danger.length) {
+    const rows = d.danger.map(h =>
+      `<div class="d-row"><span class="lv ${h.level}">${h.level === "high" ? "高危" : "注意"}</span>
+       <span>${esc(h.line.slice(0, 60))}</span><span style="color:var(--danger)">${esc(h.desc)}</span></div>`).join("");
+    box.innerHTML += `<div class="ana-block danger"><div class="d-title">⚠ 检测到 ${d.danger.length} 处危险命令</div>${rows}</div>`;
+  }
+  if (d.delay.details.length) {
+    const rows = d.delay.details.map(x =>
+      `<div class="d-row"><span>${esc(x.segment.slice(0, 50))}</span><span class="sec">+${x.suggest}s</span></div>`).join("");
+    box.innerHTML += `<div class="ana-block delay">
+      <div>建议下发间隔 <span class="total">${d.delay.total_suggest}s</span>
+      <span style="color:var(--muted);font-size:11.5px">（最小 ${d.delay.total_min}s，多段已累加）</span></div>${rows}</div>`;
+    $("delayInput").value = d.delay.total_suggest;
+  } else {
+    box.innerHTML += `<div class="ana-block ok">✓ 未检测到明显耗时命令</div>`;
+    $("delayInput").value = 0;
+  }
+}
+$("cmdInput").addEventListener("input", onCmdInput);
+$("cmdInput").addEventListener("scroll", () => { $("backdrop").scrollTop = $("cmdInput").scrollTop; });
+
+/* ---------- 生成 ---------- */
+$("btnGenerate").onclick = async () => {
+  // 关键修复：先等所有在途的密码/字段保存完成，确保后端读取的是最新值
+  // （改完密码立刻点生成时，saveCell 的异步 PUT 可能还在路上，否则会读到旧密码）
+  while (state.pendingSaves.length) {
+    await Promise.all(state.pendingSaves.slice());
+  }
+  const cmd = $("cmdInput").value;
+  const ips = [...state.selected];
+  if (!ips.length) return toast("未选择服务器", "先在左侧勾选目标服务器", "warn");
+  if (!cmd.trim()) return toast("命令为空", "先输入要执行的命令", "warn");
+  try {
+    const d = await api("/api/generate", "POST", { ips, cmd, delay: +$("delayInput").value || 0 });
+    state.result = d;
+    renderResults(d);
+    if (d.danger_total > 0)
+      toast("⚠ 含危险命令", `生成完成，但检测到 ${d.danger_total} 处危险命令（已红底标注），复制执行前务必复核`, "danger", 6000);
+    else
+      toast("生成完成", `共 ${d.blocks.length} 台服务器，建议下发间隔 ${d.delay}s`, "ok");
+    if (d.big_delay) toast("延时较大", "建议分段复制、手动控制执行节奏", "warn", 5000);
+  } catch (e) { toast("生成失败", e.message, "danger"); }
+};
+function renderResults(d) {
+  const box = $("results");
+  box.classList.add("show");
+  const copyAll = () => {
+    const cmds = d.blocks.map(b => b.cmd).join("\n\n"); // 每台命令之间空一行
+    copyText(cmds, `已复制全部命令（${d.blocks.length} 台）`);
+  };
+  // 生成按钮旁的主入口 + 结果区 sticky 工具条，同一动作两处可达
+  const barBtn = $("btnCopyCmdsBar");
+  barBtn.style.display = "";
+  barBtn.onclick = copyAll;
+  // sticky 工具条：统计 + 复制动作 + 存模板，滚动到任何位置都可用
+  box.innerHTML = `<div class="res-toolbar">
+      <span class="note">共 <b>${d.blocks.length}</b> 台 · 下发间隔 <b>${d.delay}s</b></span>
+      <button class="btn sm" id="btnCopyList" title="带机器名与等待注释的版本，适合存档或人工核对">复制清单</button>
+      <button class="btn sm" id="btnSaveTpl2">⭐ 存为模板</button>
+    </div>`;
+  $("btnCopyList").onclick = () => copyText(d.list_text, "已复制清单");
+  $("btnSaveTpl2").onclick = () => {
+    openTplEditor("new", { content: $("cmdInput").value });
+    $("tplModal").classList.add("show");
+  };
+  d.blocks.forEach((b, i) => {
+    const dangerLines = dangerLineSet(b.cmd, b.danger);
+    const cmdHtml = esc(b.cmd).split("\n").map(line =>
+      dangerLines.has(line.trim()) && line.trim() ? `<span class="dg">${line}</span>` : line).join("\n");
+    const div = document.createElement("div");
+    div.className = "blk";
+    div.innerHTML = `<div class="blk-head">
+        <span class="seq">#${i + 1}</span><span class="ip">${b.ip}</span><span class="nm">${esc(b.name || "")}</span>
+        ${(b.tags || []).map(t => `<span class="mini-tag">${esc(t)}</span>`).join("")}
+        ${b.delay.total_suggest ? `<span class="wait">⏳ 建议等待 ${b.delay.total_suggest}s</span>` : ""}
+        <button class="btn sm">复制本段</button></div>
+      <div class="blk-cmd">${cmdHtml}</div>`;
+    div.querySelector("button").onclick = () => copyText(b.cmd, `已复制 ${b.ip} 的命令`);
+    box.appendChild(div);
+  });
+  box.scrollTop = 0;
+}
+/* 未生成时恢复引导占位 */
+function resetResults() {
+  const box = $("results");
+  box.classList.remove("show");
+  box.innerHTML = `<div class="res-empty"><div class="big">⚙</div>选好机器、写好命令后点【生成命令】<br>每台机器的命令会在这里逐台列出，可整批或逐台复制</div>`;
+}
+
+/* ---------- 服务器管理 ---------- */
+state.mgrSelected = new Set();
+let mgrLastIndex = -1;
+function openMgr() { renderMgr(); $("mgrModal").classList.add("show"); }
+$("btnMgr").onclick = openMgr;
+document.querySelectorAll("[data-close]").forEach(b =>
+  b.onclick = () => $(b.dataset.close).classList.remove("show"));
+document.querySelectorAll(".modal-mask").forEach(m =>
+  m.addEventListener("click", e => {
+    if (suppressClick) return;   // 拖框结束的 click 不触发关闭
+    if (e.target === m) m.classList.remove("show");
+  }));
+
+function mgrMatch(s, kw) {
+  return (s.ip || "").toLowerCase().includes(kw)
+    || (s.name || "").toLowerCase().includes(kw)
+    || (s.user || "").toLowerCase().includes(kw)
+    || (s.password || "").toLowerCase().includes(kw)
+    || String(s.port || "22").toLowerCase().includes(kw)
+    || (s.tags || []).join(",").toLowerCase().includes(kw);
+}
+/* 不重建表格，仅刷新勾选态（用于 shift 范围多选后即时反映） */
+function refreshMgrSelection() {
+  $("mgrBody").querySelectorAll("tr").forEach(tr => {
+    const on = state.mgrSelected.has(tr.dataset.ip);
+    tr.classList.toggle("sel", on);
+    const cb = tr.querySelector(".mgr-chk"); if (cb) cb.checked = on;
+  });
+  $("bpCount").textContent = state.mgrSelected.size;
+  const btn = $("btnDelSelected");
+  if (btn) {
+    btn.disabled = !state.mgrSelected.size;
+    btn.textContent = state.mgrSelected.size ? `删除所选 (${state.mgrSelected.size})` : "删除所选";
+  }
+  const fl = state.mgrFiltered || state.servers;
+  $("mgrSelAll").checked = fl.length > 0 && fl.every(x => state.mgrSelected.has(x.ip));
+  if ($("batchPanel").style.display !== "none") renderBatchTags();
+}
+/* ---------- 表格数据模型（展示态单元格 + 单字段保存） ---------- */
+const EDITABLE_FIELDS = ["ip", "name", "user", "password", "tags", "port"];
+const GHOST_ROWS = 1;                       // 底部常驻空白行数
+function cellText(s, f) {
+  if (f === "tags") return (s.tags || []).join(",");
+  if (f === "user") return s.user || "root";
+  if (f === "port") return s.port || "22";
+  return s[f] || "";
+}
+/* 保存单个字段（silent=true 时不出 toast，用于批量粘贴）；沿用 pendingSaves 队列，
+   保证「改完密码立刻点生成」时后端读到的已是最新值。
+   field==="ip" 时是主键变更：成功后同步迁移两处勾选集的 key */
+async function saveCell(ip, field, rawValue, silent = false) {
+  const value = String(rawValue).trim();
+  const p = (async () => {
+    try {
+      const body = field === "tags"
+        ? { tags: value.split(",").map(x => x.trim()).filter(Boolean) }
+        : { [field]: value };
+      await api(`/api/servers/${ip}`, "PUT", body);
+      const s = state.servers.find(x => x.ip === ip);
+      if (s) {
+        if (field === "ip") {
+          if (value !== ip) {
+            s.ip = value;
+            [state.selected, state.mgrSelected].forEach(set => {
+              if (set.has(ip)) { set.delete(ip); set.add(value); }
+            });
+          }
+        } else if (field === "tags") s.tags = body.tags;
+        else s[field] = value;
+      }
+    } catch (err) {
+      if (!silent) toast("保存失败", `${ip} ${field}: ${err.message}`, "danger");
+    }
+  })();
+  state.pendingSaves.push(p);
+  p.finally(() => { state.pendingSaves = state.pendingSaves.filter(x => x !== p); });
+  return p;
+}
+async function createServer(fields) {
+  // fields: {ip, name, user, password, tags, port} → POST 创建
+  const body = {
+    ip: (fields.ip || "").trim(),
+    name: fields.name || "",
+    user: fields.user || "root",
+    password: fields.password ?? "",
+    tags: typeof fields.tags === "string"
+      ? fields.tags.split(",").map(x => x.trim()).filter(Boolean)
+      : (fields.tags || []),
+  };
+  if (fields.port) body.port = String(fields.port).trim();
+  await api("/api/servers", "POST", body);
+}
+const IP_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
+/* 粘贴展开核心。
+   - 常规模式：以 (startRowIdx 行, startField 列) 为左上角铺开剪贴板内容
+   - 选区模式(range)：Excel 语义——剪贴板内容在选区内**平铺填充**：
+     复制一个值 + 框选 N 格 = N 格同值；复制一行三列 + 框选 5 行 = 每行都填这三列
+   - 底部空行区（rowIdx ≥ 已有台数）：allowCreate 时新建服务器（需含有效 IP）
+   - 单行单列由调用方放行默认行为（普通文本粘贴） */
+async function applyPasteBlock(startRowIdx, startField, lines, allowCreate = true, range = null) {
+  const rowsView = state.mgrFiltered.length ? state.mgrFiltered : state.servers;
+  let updated = 0, created = 0, noIp = 0;
+  const pendingCreates = [];
+  if (range) {
+    const tileCols = lines[0]?.split("\t").length || 1;
+    for (let r = range.r0; r <= range.r1; r++) {
+      const existing = rowsView[r];
+      for (let c = Math.max(0, range.c0); c <= Math.min(range.c1, EDITABLE_FIELDS.length - 1); c++) {
+        const field = EDITABLE_FIELDS[c];
+        if (!field) continue;
+        let val = "";
+        const line = lines[(r - range.r0) % lines.length] ?? "";
+        val = (line.split("\t")[(c - range.c0) % tileCols] ?? "").trim();
+        if (existing) {
+          if (field === "ip") continue;            // 已有行不改主键
+          await saveCell(existing.ip, field, val, true);
+        } else if (allowCreate) {
+          let rec = pendingCreates.find(x => x.__r === r);
+          if (!rec) { rec = { __r: r }; pendingCreates.push(rec); }
+          rec[field] = val;
+        }
+      }
+      if (existing) updated++;
+    }
+    for (const rec of pendingCreates) {
+      const fields = { ...rec }; delete fields.__r;
+      const ipVal = (fields.ip || "").trim();
+      if (!IP_RE.test(ipVal)) { noIp++; continue; }
+      try { await createServer(fields); created++; }
+      catch (err) { toast("创建失败", `${ipVal}: ${err.message}`, "danger"); }
+    }
+  } else {
+    const seq = EDITABLE_FIELDS.slice(EDITABLE_FIELDS.indexOf(startField));
+    for (let k = 0; k < lines.length; k++) {
+      const cols = lines[k].split("\t");
+      if (!cols.some(c => c.trim() !== "")) continue;          // 整行空白跳过
+      const rowIdx = startRowIdx + k;
+      const existing = rowsView[rowIdx];
+      const fields = {};
+      cols.forEach((c, j) => { if (j < seq.length) fields[seq[j]] = c.trim(); });
+      if (existing && !Object.keys(fields).includes("ip")) {
+        for (const f of Object.keys(fields)) await saveCell(existing.ip, f, fields[f], true);
+        updated++;
+      } else if (allowCreate && IP_RE.test((fields.ip || "").trim())) {
+        try { await createServer(fields); created++; }
+        catch (err) { toast("创建失败", `${(fields.ip || "").trim()}: ${err.message}`, "danger"); }
+      } else noIp++;
+    }
+  }
+  await Promise.all(state.pendingSaves.slice());
+  await loadServers(); renderMgr();
+  const parts = [];
+  if (updated) parts.push(`更新 ${updated} 行`);
+  if (created) parts.push(`新增 ${created} 台`);
+  if (noIp) parts.push(`${noIp} 格缺有效IP未导入`);
+  toast("已粘贴", parts.join("，") || "无有效内容", "ok", 2600);
+}
+/* 剪贴板文本 → 行数组（去掉 Excel 复制常带的尾部空行） */
+function clipLines(text) {
+  const lines = (text || "").replace(/\r/g, "").split("\n").map(x => x.replace(/\s+$/, ""));
+  while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+  return lines;
+}
+function renderMgr() {
+  const tb = $("mgrBody"); tb.innerHTML = "";
+  clearCellSel();
+  const kw = (state.mgrFilter || "").trim().toLowerCase();
+  const list = kw ? state.servers.filter(s => mgrMatch(s, kw)) : state.servers;
+  state.mgrFiltered = list;
+  $("mgrCount").textContent = kw ? `匹配 ${list.length} / 共 ${state.servers.length} 台` : `共 ${state.servers.length} 台`;
+  $("mgrClearFilter").style.display = kw ? "" : "none";
+  $("mgrSelAll").checked = list.length > 0 && list.every(s => state.mgrSelected.has(s.ip));
+  list.forEach((s, i) => {
+    const tr = document.createElement("tr");
+    const checked = state.mgrSelected.has(s.ip);
+    tr.dataset.ip = s.ip;
+    if (checked) tr.classList.add("sel");
+    tr.innerHTML = `<td class="rownum pick">${i + 1}</td><td><input type="checkbox" class="mgr-chk" ${checked ? "checked" : ""}></td>
+      ${EDITABLE_FIELDS.map(f => `<td class="cell${f === "ip" ? " cell-ip" : ""}" data-f="${f}">${esc(cellText(s, f))}</td>`).join("")}`;
+    tr.querySelector(".pick").onclick = e => { if (!suppressClick) toggleRowPick(i, e.shiftKey); };
+    const chk = tr.querySelector(".mgr-chk");
+    chk.onchange = () => {
+      if (chk.checked) state.mgrSelected.add(s.ip); else state.mgrSelected.delete(s.ip);
+      mgrLastIndex = i;
+      refreshMgrSelection();
+    };
+    tb.appendChild(tr);
+  });
+  // 底部常驻空白行：像 Excel 一样直接往下拉出新服务器（筛选状态下不显示，避免新行“消失”的困惑）
+  if (!(state.mgrFilter || "").trim()) {
+    for (let g = 0; g < GHOST_ROWS; g++) tb.appendChild(ghostRowEl());
+  }
+  $("bpCount").textContent = state.mgrSelected.size;
+}
+/* 底部空白行：任意格填写后失焦/回车，IP 合法即创建；字段序 [ip, name, user, password, tags, port] */
+function ghostRowEl() {
+  const tr = document.createElement("tr");
+  tr.className = "ghost-row";
+  tr.innerHTML = `<td class="rownum">+</td><td></td>
+    <td><input type="text" data-f="ip" placeholder="输入IP即新建"></td>
+    <td><input type="text" data-f="name" placeholder="命名"></td>
+    <td><input type="text" data-f="user" placeholder="root"></td>
+    <td><input type="text" data-f="password"></td>
+    <td><input type="text" data-f="tags" placeholder="标签1,标签2"></td>
+    <td><input type="text" data-f="port" placeholder="22" style="width:45px"></td>`;
+  tr.querySelectorAll("input[data-f]").forEach(inp => {
+    inp.addEventListener("paste", e => {
+      const cd = e.clipboardData; if (!cd) return;
+      const lines = clipLines(cd.getData("text"));
+      if (lines.length === 1 && lines[0].split("\t").length === 1) return;   // 单值默认粘贴
+      e.preventDefault();
+      const idx = [...$("mgrBody").querySelectorAll("tr")].indexOf(tr);
+      // 空白行区从 ip 列起映射（无论从哪格触发），保证整表粘贴能带上 IP
+      applyPasteBlock(idx, "ip", lines, true);
+    });
+    inp.addEventListener("keydown", ev => {
+      if (ev.key === "Enter") { ev.preventDefault(); tryCreateFromGhost(tr, inp); }
+    });
+    inp.addEventListener("blur", () => tryCreateFromGhost(tr, inp));
+  });
+  return tr;
+}
+async function tryCreateFromGhost(tr, trigger) {
+  if (tr.dataset.creating) return;                 // 防止 blur+Enter 双触发
+  const get = f => tr.querySelector(`input[data-f="${f}"]`)?.value.trim() || "";
+  const ip = get("ip");
+  if (!ip) return;                                  // 空行静默忽略
+  if (!IP_RE.test(ip)) { trigger?.classList.add("bad-ip"); return; }
+  tr.dataset.creating = "1";
+  const fields = { ip, name: get("name"), user: get("user"), password: get("password"), tags: get("tags"), port: get("port") };
+  try {
+    await createServer(fields);
+    toast("已添加", ip, "ok", 1500);
+    await loadServers(); renderMgr();
+    // 焦点落到底部第一条空行的 IP 格，连续录入不碰鼠标
+    requestAnimationFrame(() => document.querySelector("#mgrBody tr.ghost-row input[data-f=ip]")?.focus());
+  } catch (err) {
+    delete tr.dataset.creating;
+    toast("创建失败", `${ip}: ${err.message}`, "danger");
+  }
+}
+/* ---------- 表格交互：Excel 式展示态 ---------- */
+let mgrCellSel = null;   // 选区 {r0,c0,r1,c1}：r=视图行号，c=EDITABLE_FIELDS 下标
+function clearCellSel() {
+  mgrCellSel = null;
+  $("mgrBody").querySelectorAll("td.cell.csel").forEach(td => td.classList.remove("csel"));
+}
+function isMgrOpen() { return $("mgrModal").classList.contains("show"); }
+function toggleRowPick(i, shiftKey) {
+  const list = state.mgrFiltered;
+  if (shiftKey && mgrLastIndex >= 0) {
+    const a = Math.min(mgrLastIndex, i), b = Math.max(mgrLastIndex, i);
+    for (let k = a; k <= b; k++) if (list[k]) state.mgrSelected.add(list[k].ip);
+  } else {
+    const ip = list[i]?.ip;
+    if (!ip) return;
+    state.mgrSelected.has(ip) ? state.mgrSelected.delete(ip) : state.mgrSelected.add(ip);
+    mgrLastIndex = i;
+  }
+  refreshMgrSelection();
+}
+function setCellText(td, s) { td.textContent = cellText(s, td.dataset.f); }
+/* ---------- 行内标签选择浮层（飞书式多选） ---------- */
+let tagPickerEl = null;
+function closeTagPicker() {
+  if (!tagPickerEl) return;
+  tagPickerEl.remove(); tagPickerEl = null;
+  // 标签可能新增/变化：关闭时重建左侧树并回放勾选态
+  renderTags();
+  syncTagChips();
+}
+document.addEventListener("pointerdown", e => {
+  if (tagPickerEl && !e.target.closest(".tag-picker")) closeTagPicker();
+}, true);
+function openTagPicker(td) {
+  closeTagPicker();
+  const tr = td.parentElement;
+  const server = state.servers.find(x => x.ip === tr.dataset.ip);
+  if (!server) return;
+  const cur = new Set(server.tags || []);
+  const attrIdx = {};
+  groupView().forEach(g => { if (g.type === "attribute") g.items.forEach(t => { attrIdx[t] ??= g.name; }); });
+
+  const picker = document.createElement("div");
+  picker.className = "tag-picker";
+  const r = td.getBoundingClientRect();
+  const width = 280, height = Math.min(320, window.innerHeight - 20);
+  picker.style.left = Math.min(r.left, window.innerWidth - width - 8) + "px";
+  picker.style.top = (r.bottom + 4 + height > window.innerHeight ? r.top - height - 4 : r.bottom + 4) + "px";
+  const search = document.createElement("input");
+  search.className = "tp-search"; search.placeholder = "搜索或输入新标签后回车…";
+  const listBox = document.createElement("div");
+  picker.append(search, listBox);
+  document.body.appendChild(picker);
+  tagPickerEl = picker;
+
+  function commitTags() {
+    server.tags = [...cur];
+    saveCell(server.ip, "tags", [...cur].join(","), true);
+    setCellText(td, server);
+    syncTagChips();
+  }  function addTag(t) {
+    t = t.trim();
+    if (!t || cur.has(t)) return;
+    // 属性组单选：加入某属性成员时替换同组旧值
+    const gname = attrIdx[t];
+    if (gname) {
+      groupView().find(g => g.name === gname)?.items.forEach(m => { if (m !== t) cur.delete(m); });
+    }
+    cur.add(t);
+    commitTags();
+  }
+  function renderList(kw) {
+    kw = (kw || "").trim().toLowerCase();
+    listBox.innerHTML = "";
+    let shown = 0;
+    groupView().forEach(g => {
+      const items = g.items.filter(t => !kw || t.toLowerCase().includes(kw));
+      if (!items.length) return;
+      shown += items.length;
+      const grp = document.createElement("div"); grp.className = "bp-group";
+      const isAttr = g.type === "attribute";
+      grp.innerHTML = `<div class="bp-gname">${esc(g.name)}
+        <span class="gtype ${isAttr ? "attr" : "tagc"}">${isAttr ? "属性·单选" : "标签"}</span></div>`;
+      const chips = document.createElement("div"); chips.className = "tag-chips";
+      items.forEach(t => {
+        const chip = document.createElement("span");
+        chip.className = "chip" + (cur.has(t) ? " on" : "");
+        paintChip(chip, t);
+        chip.textContent = t;
+        chip.onclick = () => {
+          if (cur.has(t)) { cur.delete(t); chip.classList.remove("on"); }
+          else {
+            if (isAttr) {
+              g.items.forEach(m => { if (m !== t) { cur.delete(m); } });
+              chips.querySelectorAll(".chip").forEach(el => el.classList.remove("on"));
+            }
+            cur.add(t); chip.classList.add("on");
+          }
+          commitTags();
+        };
+        chips.appendChild(chip);
+      });
+      grp.appendChild(chips);
+      listBox.appendChild(grp);
+    });
+    // 新建入口
+    const fresh = kw && ![...cur].some(t => t.toLowerCase() === kw)
+      && !groupView().some(g => g.items.some(t => t.toLowerCase() === kw));
+    if (fresh || kw) {
+      const newChip = document.createElement("span");
+      newChip.className = "chip tp-new";
+      paintChip(newChip, kw || "新标签");
+      newChip.textContent = `＋ 添加「${kw || "新标签"}」`;
+      newChip.onclick = () => {
+        addTag(kw || "新标签");
+        renderList(search.value);
+      };
+      listBox.appendChild(newChip);
+      shown++;
+    }
+    if (!shown) listBox.innerHTML = `<div style="font-size:12px;color:var(--muted)">无匹配标签</div>`;
+  }
+  search.addEventListener("input", () => renderList(search.value));
+  search.addEventListener("keydown", e => {
+    if (e.key === "Enter") {
+      e.preventDefault(); e.stopPropagation();
+      const v = search.value.trim();
+      if (v) { addTag(v); search.value = ""; renderList(""); }
+    } else if (e.key === "Escape") { e.preventDefault(); closeTagPicker(); }
+  });
+  search.addEventListener("paste", e => {
+    const cd = e.clipboardData; if (!cd) return;
+    const text = cd.getData("text");
+    if (!text || !text.includes(",")) return;
+    e.preventDefault();
+    text.split(",").map(x => x.trim()).filter(Boolean).forEach(addTag);
+    search.value = ""; renderList("");
+  });
+  renderList("");
+  requestAnimationFrame(() => search.focus());
+}
+function enterCellEdit(td) {
+  if (td.classList.contains("editing")) return;
+  // 标签列走飞书式多选浮层，不走普通文本编辑
+  if (td.dataset.f === "tags") { openTagPicker(td); return; }
+  const tr = td.parentElement;
+  const ip = tr.dataset.ip;
+  const f = td.dataset.f;
+  const s = state.servers.find(x => x.ip === ip);
+  if (!s) return;
+  clearCellSel();
+  td.classList.add("editing");
+  td.textContent = "";
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.value = cellText(s, f);
+  td.appendChild(inp);
+  inp.focus(); inp.select();
+  let done = false;
+  const commit = async (moveDown) => {
+    if (done) return; done = true;
+    const val = inp.value.trim();
+    td.classList.remove("editing");
+    if (val !== cellText(s, f)) await saveCell(ip, f, val, false);
+    // ip 是主键：变更后按新值定位行数据并同步行标识/勾选高亮
+    const freshIp = f === "ip" ? val : ip;
+    if (f === "ip") tr.dataset.ip = val;
+    setCellText(td, state.servers.find(x => x.ip === freshIp) || s);
+    renderTags();
+    syncTagChips();   // 树重建后必须回放勾选态，否则全部熄灭
+    refreshMgrSelection();
+    if (!moveDown) return;
+    // Excel 手感：Enter 保存并向下进入同列编辑（末行则落到底部空白行）
+    const rows = [...$("mgrBody").querySelectorAll("tr")];
+    const r = rows.indexOf(tr);
+    const nextTd = rows[r + 1]?.querySelector(`td.cell[data-f="${f}"]`);
+    if (nextTd) enterCellEdit(nextTd);
+    else rows[r + 1]?.querySelector(`input[data-f="${f}"]`)?.focus();
+  };
+  inp.addEventListener("keydown", ev => {
+    if (ev.key === "Enter") { ev.preventDefault(); commit(true); }
+    else if (ev.key === "Escape") { ev.preventDefault(); done = true; td.classList.remove("editing"); setCellText(td, s); }
+    else if (ev.key === "Tab") {
+      ev.preventDefault(); commit(false);
+      const nb = td.nextElementSibling;
+      if (nb?.classList.contains("cell")) enterCellEdit(nb);
+    }
+  });
+  inp.addEventListener("blur", () => commit(false));
+  inp.addEventListener("paste", e => {
+    const cd = e.clipboardData; if (!cd) return;
+    const lines = clipLines(cd.getData("text"));
+    if (lines.length === 1 && lines[0].split("\t").length === 1) return;  // 单值走默认粘贴
+    e.preventDefault();
+    done = true;   // 区域粘贴接管，放弃本格编辑态
+    const rows = [...$("mgrBody").querySelectorAll("tr")];
+    applyPasteBlock(rows.indexOf(tr), f, lines, true);
+  });
+}
+$("mgrSelAll").onchange = e => {
+  const kw = (state.mgrFilter || "").trim().toLowerCase();
+  const list = kw ? state.servers.filter(s => mgrMatch(s, kw)) : state.servers;
+  if (e.target.checked) list.forEach(s => state.mgrSelected.add(s.ip));
+  else list.forEach(s => state.mgrSelected.delete(s.ip));
+  renderMgr();
+  if ($("batchPanel").style.display !== "none") renderBatchTags();
+};
+$("mgrSearch").oninput = e => { state.mgrFilter = e.target.value; renderMgr(); };
+$("mgrClearFilter").onclick = () => { state.mgrFilter = ""; $("mgrSearch").value = ""; renderMgr(); };
+
+/* ---------- 框选单元格：拖拽画矩形，松手未拖动则单击进编辑 ---------- */
+(function initCellSelect() {
+  let anchorTd = null, dragging = false, sx = 0, sy = 0, band = null;
+  function markBand() {
+    const b = band.getBoundingClientRect();
+    $("mgrBody").querySelectorAll("td.cell").forEach(td => {
+      const r = td.getBoundingClientRect();
+      const hit = !(r.right < b.left || r.left > b.right || r.bottom < b.top || r.top > b.bottom);
+      td.classList.toggle("csel", hit);
+    });
+  }
+  document.addEventListener("pointerdown", e => {
+    if (!isMgrOpen()) return;
+    const td = e.target.closest?.("#mgrBody td.cell");
+    if (!td) { if (!e.target.closest?.("#mgrBody")) clearCellSel(); return; }
+    if (e.button !== 0 || td.classList.contains("editing")) return;
+    anchorTd = td; dragging = false; sx = e.clientX; sy = e.clientY;
+    // 指针捕获：拖到浏览器窗口外松手也能收到 pointerup，避免拖拽态卡死
+    try { td.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  document.addEventListener("pointermove", e => {
+    if (!anchorTd) return;
+    if (!dragging && Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) < 6) return;
+    if (!dragging) {
+      dragging = true;
+      band = document.createElement("div"); band.className = "drag-band"; document.body.appendChild(band);
+    }
+    band.style.left = Math.min(sx, e.clientX) + "px"; band.style.top = Math.min(sy, e.clientY) + "px";
+    band.style.width = Math.abs(e.clientX - sx) + "px"; band.style.height = Math.abs(e.clientY - sy) + "px";
+    markBand();
+  });
+  document.addEventListener("pointerup", () => {
+    if (!anchorTd) return;
+    if (dragging) {
+      band?.remove(); band = null;
+      // 吞掉拖拽结束后的 click，防止误触遮罩关闭弹窗
+      suppressClick = true; setTimeout(() => suppressClick = false, 0);
+      const tds = [...$("mgrBody").querySelectorAll("td.cell.csel")];
+      if (tds.length) {
+        const pts = tds.map(td => ({
+          r: state.mgrFiltered.findIndex(x => x.ip === td.parentElement.dataset.ip),
+          c: EDITABLE_FIELDS.indexOf(td.dataset.f),
+        }));
+        mgrCellSel = {
+          r0: Math.min(...pts.map(p => p.r)), c0: Math.min(...pts.map(p => p.c)),
+          r1: Math.max(...pts.map(p => p.r)), c1: Math.max(...pts.map(p => p.c)),
+        };
+        // 整行全字段被框住 → 勾选联动：覆盖行全部已勾选则反选取消，否则勾选
+        if (mgrCellSel.c0 === 0 && mgrCellSel.c1 === EDITABLE_FIELDS.length - 1) {
+          const covered = [];
+          for (let r = mgrCellSel.r0; r <= mgrCellSel.r1; r++) {
+            const s = state.mgrFiltered[r];
+            if (s) covered.push(s.ip);
+          }
+          const allPicked = covered.length > 0 && covered.every(ip => state.mgrSelected.has(ip));
+          covered.forEach(ip => allPicked ? state.mgrSelected.delete(ip) : state.mgrSelected.add(ip));
+          if (covered.length) refreshMgrSelection();
+        }
+      } else clearCellSel();
+    } else enterCellEdit(anchorTd);
+    anchorTd = null; dragging = false;
+  });
+})();
+/* 选区快捷键：Ctrl/Cmd+C 复制 TSV、Delete/Backspace 批量清空 */
+document.addEventListener("keydown", e => {
+  if (!isMgrOpen() || !mgrCellSel) return;
+  if (e.target.closest?.("input,textarea")) return;
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key.toLowerCase() === "c") {
+    e.preventDefault();   // 阻止原生文本复制覆盖我们的 TSV 内容
+    const lines = [];
+    for (let r = mgrCellSel.r0; r <= mgrCellSel.r1; r++) {
+      const s = state.mgrFiltered[r]; if (!s) continue;
+      lines.push(EDITABLE_FIELDS.slice(mgrCellSel.c0, mgrCellSel.c1 + 1).map(f => cellText(s, f)).join("\t"));
+    }
+    navigator.clipboard.writeText(lines.join("\n")).then(() =>
+      toast("已复制", `${lines.length} 行 × ${mgrCellSel.c1 - mgrCellSel.c0 + 1} 列，可粘贴到 Excel`, "ok", 1800));
+  } else if (e.key === "Delete" || e.key === "Backspace") {
+    e.preventDefault();
+    const jobs = [];
+    for (let r = mgrCellSel.r0; r <= mgrCellSel.r1; r++) {
+      const s = state.mgrFiltered[r]; if (!s) continue;
+      for (let c = mgrCellSel.c0; c <= mgrCellSel.c1; c++) {
+        const f = EDITABLE_FIELDS[c];
+        if (f === "ip") continue;   // IP 不允许清空
+        if (cellText(s, f) !== "") jobs.push(saveCell(s.ip, f, "", true));
+      }
+    }
+    Promise.all(jobs).then(async () => {
+      await loadServers(); renderMgr();
+      toast("已清空", `${jobs.length} 个单元格`, "ok", 1500);
+    });
+  }
+});
+/* 选区状态下直接 Ctrl/V 粘贴（焦点不在任何输入框时）：Excel 式平铺填充选区 */
+document.addEventListener("paste", e => {
+  if (!isMgrOpen()) return;
+  if (e.target.closest?.("input,textarea")) return;
+  const cd = e.clipboardData; if (!cd) return;
+  const text = cd.getData("text");
+  if (!text) return;
+  e.preventDefault();
+  if (!mgrCellSel)
+    return toast("先选择目标", "单击单元格后可粘贴到该格；或先拖框选择一片区域再粘贴", "warn", 3000);
+  const lines = clipLines(text);
+  if (!lines.length) return;
+  applyPasteBlock(mgrCellSel.r0, EDITABLE_FIELDS[mgrCellSel.c0], lines, true, mgrCellSel);
+});
+
+/* 批量打标签 */
+$("btnBatchTag").onclick = () => {
+  const p = $("batchPanel"); const show = p.style.display === "none";
+  p.style.display = show ? "" : "none";
+  if (show) renderBatchTags();
+};
+let bpMode = "add";
+function tagOnAllSelected(tag) {
+  const sel = [...state.mgrSelected];
+  if (!sel.length) return false;
+  return state.servers.filter(s => sel.includes(s.ip) && (s.tags || []).includes(tag)).length === sel.length;
+}
+function renderBatchTags() {
+  const box = $("bpTags"); box.innerHTML = "";
+  $("bpCount").textContent = state.mgrSelected.size;
+  $("bpTags").classList.toggle("remove-mode", bpMode === "remove");
+  const buildGroup = (group) => {
+    const g = document.createElement("div"); g.className = "bp-group";
+    const isAttr = group.type === "attribute";
+    g.innerHTML = `<div class="bp-gname">${esc(group.name)}
+      <span class="gtype ${isAttr ? "attr" : "tagc"}">${isAttr ? "属性·单选" : "标签"}</span></div>`;
+    const chips = document.createElement("div"); chips.className = "tag-chips";
+    group.items.forEach(t => {
+      const c = document.createElement("span"); c.className = "chip"; c.textContent = t;
+      paintChip(c, t);
+      const has = tagOnAllSelected(t);
+      if (has) c.classList.add("has");
+      if (bpMode === "remove" && has) c.classList.add("on"); // 移除模式下预勾选已含标签
+      if (isAttr) {
+        // 属性组单选预演：追加模式下勾选同组成员时自动互斥
+        c.addEventListener("click", () => {
+          if (bpMode !== "add") return;
+          chips.querySelectorAll(".chip").forEach(el => {
+            if (el !== c) el.classList.remove("on");
+          });
+        });
+      }
+      c.title = "点击勾选 · 长按可重命名或删除";
+      enableChipEdit(c, t);
+      chips.appendChild(c);
+    });
+    g.appendChild(chips); box.appendChild(g);
+  };
+  groupView().forEach(buildGroup);
+  const cust = document.createElement("div"); cust.className = "bp-group";
+  cust.innerHTML = `<div class="bp-gname">自定义新标签</div>`;
+  const inp = document.createElement("input"); inp.type = "text";
+  inp.placeholder = "输入新标签，逗号分隔";
+  inp.style.cssText = "width:100%;height:28px;border:1px solid var(--border);border-radius:6px;padding:0 8px;font-size:12.5px;outline:none";
+  cust.appendChild(inp); box.appendChild(cust);
+}
+
+/* 标签长按 → 原地点编辑（重命名）/ 右上角小按钮删除（全局移除） */
+function enableChipEdit(chip, tag) {
+  let timer = null, sx = 0, sy = 0, fired = false;
+  const start = e => {
+    if (chip.classList.contains("editing")) return;
+    fired = false; sx = e.clientX; sy = e.clientY;
+    timer = setTimeout(() => { fired = true; enterChipEdit(chip, tag); }, 500);
+  };
+  const move = e => {
+    if (!timer || fired) return;
+    if (Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) > 12) { clearTimeout(timer); timer = null; }
+  };
+  const end = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  chip.addEventListener("pointerdown", start);
+  chip.addEventListener("pointermove", move);
+  chip.addEventListener("pointerup", end);
+  chip.addEventListener("pointercancel", end);
+  chip.onclick = () => {
+    if (suppressClick || fired || chip.classList.contains("editing")) return;
+    chip.classList.toggle("on");
+  };
+}
+function enterChipEdit(chip, tag) {
+  suppressClick = true; setTimeout(() => suppressClick = false, 0);
+  chip.classList.add("editing");
+  chip.classList.remove("on", "has");
+  chip.innerHTML = "";
+  const inp = document.createElement("input");
+  inp.type = "text"; inp.value = tag; inp.className = "chip-edit-input"; inp.maxLength = 40;
+  const del = document.createElement("button");
+  del.type = "button"; del.className = "chip-del"; del.textContent = "×"; del.title = "删除该标签（从所有服务器移除）";
+  chip.appendChild(inp); chip.appendChild(del);
+  inp.focus(); inp.select();
+  let done = false;
+  const finish = async (rename) => {
+    if (done) return; done = true;
+    if (rename) {
+      const nw = inp.value.trim();
+      if (nw && nw !== tag) {
+        try { const d = await api("/api/tags/rename", "POST", { old: tag, new: nw });
+          toast("已重命名", `${tag} → ${nw}（${d.affected} 台同步）`, "ok"); }
+        catch (e) { toast("重命名失败", e.message, "danger"); }
+      }
+    }
+    await loadServers(); renderBatchTags();
+  };
+  inp.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+  });
+  inp.addEventListener("blur", () => finish(true));
+  del.addEventListener("pointerdown", e => e.preventDefault()); // 防止 input 失焦误触发 commit
+  del.onclick = async (e) => {
+    e.stopPropagation();
+    if (done) return;
+    if (!(await confirmDialog({
+      title: "移除标签",
+      message: `确认从所有服务器移除标签「${tag}」？\n此操作不可恢复`,
+      okText: "移除", danger: true,
+    }))) return;
+    done = true;
+    try { const d = await api("/api/tags/remove", "POST", { tag });
+      toast("已移除", `${tag} 已从 ${d.affected} 台移除`, "ok"); }
+    catch (err) { toast("删除失败", err.message, "danger"); }
+    await loadServers(); renderBatchTags();
+  };
+}
+$("bpModeAdd").onclick = () => { bpMode = "add"; $("bpModeAdd").classList.add("on"); $("bpModeRemove").classList.remove("on"); renderBatchTags(); };
+$("bpModeRemove").onclick = () => { bpMode = "remove"; $("bpModeRemove").classList.add("on"); $("bpModeAdd").classList.remove("on"); renderBatchTags(); };
+$("btnApplyBatch").onclick = async () => {
+  const ips = [...state.mgrSelected];
+  if (!ips.length) return toast("未勾选服务器", "先在表格勾选要打标签的服务器", "warn");
+  const tags = [...document.querySelectorAll("#bpTags .chip.on")].map(c => c.textContent);
+  const customInp = document.querySelector("#bpTags input[type=text]");
+  const custom = (customInp ? customInp.value : "").split(",").map(x => x.trim()).filter(Boolean);
+  const all = [...new Set([...tags, ...custom])];
+  if (!all.length) return toast("未选择标签", "勾选或输入至少一个标签", "warn");
+  if (bpMode === "remove") {
+    const d = await api("/api/tags/batch-remove", "POST", { ips, tags: all });
+    toast("批量移除完成", `${d.affected} 台已移除 ${all.length} 个标签`, "ok");
+  } else {
+    const d = await api("/api/tags/batch-add", "POST", { ips, tags: all });
+    toast("批量追加完成", `${d.affected} 台已追加 ${all.length} 个标签`, "ok");
+  }
+  await loadServers(); renderMgr(); renderBatchTags();
+};
+
+/* 删除所选（替代逐行删除按钮；一键清空已移除——资产台账不设危险按钮） */
+$("btnDelSelected").onclick = async () => {
+  const ips = [...state.mgrSelected];
+  if (!ips.length) return toast("未勾选服务器", "先勾选要删除的行", "warn");
+  const preview = ips.slice(0, 5).join("、") + (ips.length > 5 ? ` 等 ${ips.length} 台` : "");
+  if (!(await confirmDialog({
+    title: "删除服务器",
+    message: `确认删除所选 ${ips.length} 台服务器？\n${preview}\n此操作不可恢复！`,
+    okText: "删除", danger: true,
+  }))) return;
+  let failed = 0;
+  for (const ip of ips) {
+    try { await api(`/api/servers/${encodeURIComponent(ip)}`, "DELETE"); state.selected.delete(ip); }
+    catch (err) { failed++; toast("删除失败", `${ip}: ${err.message}`, "danger"); }
+  }
+  state.mgrSelected.clear();
+  if (ips.length - failed > 0) toast("已删除", `${ips.length - failed} 台`, "ok");
+  await loadServers(); renderMgr();
+};
+$("btnAddRow").onclick = () => {
+  const ghost = document.querySelector("#mgrBody tr.ghost-row input[data-f]");
+  if (!ghost) return toast("无法新增", "当前处于筛选状态，请先清除筛选", "warn");
+  ghost.focus();
+};
+$("btnImport").onclick = () => { const b = $("importBox"); b.style.display = b.style.display === "none" ? "" : "none"; };
+$("btnDoImport").onclick = async () => {
+  const d = await api("/api/servers/import", "POST", { text: $("importText").value });
+  toast("导入完成", `新增 ${d.added} 台${d.skipped.length ? "，跳过 " + d.skipped.length + " 行" : ""}`, "ok");
+  $("importText").value = ""; loadServers().then(renderMgr);
+};
+$("btnExport").onclick = async () => {
+  const d = await api("/api/servers/export");
+  const blob = new Blob([d.text], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  const ts = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  a.href = URL.createObjectURL(blob); a.download = `servers_${ts}.csv`; a.click();
+};
+
+/* ---------- 模板库 ---------- */
+let tplEditMode = "new", tplEditIndex = -1;
+function openTplLib() {
+  $("tplEditor").style.display = "none";
+  $("tplFromScriptBox").style.display = "none";
+  renderTplList();
+  $("tplModal").classList.add("show");
+}
+function renderTplList() {
+  const box = $("tplList");
+  if (!state.tpls.length) { box.innerHTML = `<div class="tpl-empty">暂无模板，点「+ 新建模板」或从脚本转换创建</div>`; return; }
+  box.innerHTML = "";
+  state.tpls.forEach((t, i) => {
+    const item = document.createElement("div"); item.className = "tpl-item";
+    const preview = (t.content || "").split("\n").slice(0, 6).join("\n") || "(空)";
+    item.innerHTML = `<div class="t-head">
+        <span class="t-name">${esc(t.name || "未命名")}</span>
+        <span class="t-cat">${esc(t.category || "未分类")}</span>
+        <span class="t-acts">
+          <button class="btn sm" data-act="load">载入</button>
+          <button class="btn sm" data-act="edit">编辑</button>
+          <button class="btn sm danger" data-act="del">删除</button>
+        </span></div>
+      <div class="t-prev">${esc(preview)}</div>`;
+    item.querySelector('[data-act="load"]').onclick = () => {
+      setCmdValue(t.content);
+      $("tplModal").classList.remove("show");
+      toast("已载入模板", t.name, "ok", 1800);
+    };
+    item.querySelector('[data-act="edit"]').onclick = () => openTplEditor("edit", i);
+    item.querySelector('[data-act="del"]').onclick = async () => {
+      if (!(await confirmDialog({ title: "删除模板", message: `确认删除模板「${t.name}」？`, okText: "删除", danger: true }))) return;
+      await api(`/api/templates/${i}`, "DELETE");
+      await loadTemplates(); renderTplList();
+      toast("已删除", t.name, "ok", 1500);
+    };
+    box.appendChild(item);
+  });
+}
+function openTplEditor(mode, idx) {
+  tplEditMode = mode; tplEditIndex = idx;
+  $("tplFromScriptBox").style.display = "none";
+  if (mode === "edit") {
+    const t = state.tpls[idx];
+    $("tplName").value = t.name || ""; $("tplCat").value = t.category || ""; $("tplContent").value = t.content || "";
+  } else {
+    $("tplName").value = ""; $("tplCat").value = "未分类";
+    $("tplContent").value = (idx && idx.content != null) ? idx.content : "";
+  }
+  $("tplList").style.display = "none";
+  $("tplEditor").style.display = "";
+  $("tplName").focus();
+}
+function closeTplEditor() {
+  $("tplEditor").style.display = "none";
+  $("tplList").style.display = "";
+}
+$("btnTplLib").onclick = openTplLib;
+$("btnNewTpl").onclick = () => openTplEditor("new", null);
+$("btnTplFromScript").onclick = () => {
+  openTplEditor("new", null);
+  $("tplFromScriptBox").style.display = "";
+  $("tplName").value = "新建脚本"; $("tplCat").value = "脚本模板";
+  $("tplScriptSrc").focus();
+};
+$("btnCancelTpl").onclick = closeTplEditor;
+$("btnDoConvert").onclick = async () => {
+  const src = $("tplScriptSrc").value;
+  if (!src.trim()) return toast("请先粘贴脚本", "", "warn");
+  try {
+    const d = await api("/api/templates/convert", "POST", { text: src });
+    $("tplContent").value = d.content;
+    toast("转换完成", "IP/密码/账号/端口已转为变量，可预览后保存", "ok", 2500);
+  } catch (e) { toast("转换失败", e.message, "danger"); }
+};
+$("btnSaveTplOk").onclick = async () => {
+  const name = $("tplName").value.trim() || "未命名";
+  const category = $("tplCat").value.trim() || "未分类";
+  const content = $("tplContent").value;
+  if (!content.trim()) return toast("命令内容为空", "请输入模板命令", "warn");
+  try {
+    if (tplEditMode === "edit") {
+      await api(`/api/templates/${tplEditIndex}`, "PUT", { name, category, content });
+      toast("已更新", name, "ok", 1800);
+    } else {
+      await api("/api/templates", "POST", { name, category, content });
+      toast("已保存为模板", name, "ok", 1800);
+    }
+    await loadTemplates();
+    closeTplEditor(); renderTplList();
+  } catch (e) { toast(tplEditMode === "edit" ? "更新失败" : "保存失败", e.message, "danger"); }
+};
+$("btnSaveTpl").onclick = () => {
+  openTplEditor("new", { content: $("cmdInput").value });
+  $("tplModal").classList.add("show");
+};
+
+/* ---------- 启动 ---------- */
+(async () => { await loadMeta(); await loadServers(); await loadTemplates(); })();
+</script>
+</body>
+</html>

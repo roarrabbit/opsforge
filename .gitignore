@@ -1,0 +1,32 @@
+.DS_Store
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+.planning/
+.superpowers/
+.worktrees/
+
+# Local runtime data and generated artifacts
+.ops_cmd_generator/
+servers.json
+templates.json
+delay_rules.json
+history.jsonl
+target_sets.json
+.secret.key
+output/
+ops_*.sh
+ops_*.txt
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*~
